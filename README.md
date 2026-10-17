@@ -16,7 +16,7 @@ GitHub Pagesで動く日本株の管理アプリ。依存パッケージ不要�
 
 1. このディレクトリを専用リポジトリのmainブランチに配置します。個人の保有情報をリポジトリに入れないでください。
 2. Settings → Pages → Build and deployment → Sourceを **GitHub Actions** にします。
-3. Settings → Actions → General → Workflow permissionsを **Read and write permissions** にします（公開株価とコード一覧の更新用）。
+3. リポジトリのGitHub Actionsを有効にします。必要な権限はこのアプリのワークフロー内で指定済みです。リポジトリ全体の既定権限を広げる必要はありません。
 4. Actions →「株価取得とGitHub Pages公開」→ Run workflowを実行します。
 5. PagesのURLを開きます。mainへのpush時、毎週月〜金18:17（日本時間）にも取得・公開します。GitHubの混雑や休日により更新時刻は前後します。
 

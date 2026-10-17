@@ -61,3 +61,46 @@ export function waterfall(rows) {
     return { ...r, start, end: total };
   });
 }
+
+export const CSV_HEADER = ['portfolio', 'symbol', 'name', 'quantity', 'cost'];
+export function exportCSV(state) {
+  const quote = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
+  const rows = [CSV_HEADER, ...state.portfolios.flatMap(p => p.holdings.map(h => [p.name, h.symbol, h.name, h.quantity, h.cost]))];
+  return '\uFEFF' + rows.map(row => row.map(quote).join(',')).join('\r\n') + '\r\n';
+}
+export function importCSV(text) {
+  text = text.replace(/^\uFEFF/, '');
+  const rows = []; let row = [], field = '', quoted = false, closed = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+      else if (c === '"') { quoted = false; closed = true; }
+      else field += c;
+    } else if (c === '"' && !field && !closed) quoted = true;
+    else if (c === ',' || c === '\n' || c === '\r') {
+      row.push(field); field = ''; closed = false;
+      if (c !== ',') { if (row.some(v => v.trim())) rows.push(row); row = []; if (c === '\r' && text[i + 1] === '\n') i++; }
+    } else {
+      if (closed || c === '"') throw new Error('CSVの引用符の形式が正しくありません。');
+      field += c;
+    }
+  }
+  if (quoted) throw new Error('CSVの引用符が閉じていません。');
+  row.push(field); if (row.some(v => v.trim())) rows.push(row);
+  if (!rows.length || rows[0].map(v => v.trim()).join(',') !== CSV_HEADER.join(',')) throw new Error('CSVの見出しは portfolio,symbol,name,quantity,cost の順にしてください。');
+  const groups = new Map();
+  for (let i = 1; i < rows.length; i++) {
+    const cells = rows[i];
+    if (cells.length !== CSV_HEADER.length) throw new Error(`CSVの${i + 1}行目の列数が正しくありません。`);
+    const [portfolio, symbol, name, quantity, cost] = cells;
+    if (!portfolio.trim() || portfolio.trim().length > 40) throw new Error(`CSVの${i + 1}行目のポートフォリオ名を確認してください。`);
+    if (!quantity.trim()) throw new Error(`CSVの${i + 1}行目の株数が空欄です。`);
+    const h = holdingOf({symbol, name, quantity, cost});
+    const key = portfolio.trim();
+    if (!groups.has(key)) groups.set(key, { id: crypto.randomUUID(), name: key, holdings: [] });
+    groups.get(key).holdings.push(h);
+  }
+  const portfolios = [...groups.values()];
+  return validateBackup({schema: SCHEMA, portfolios, active: portfolios[0]?.id});
+}

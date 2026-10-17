@@ -1,4 +1,4 @@
-import { SCHEMA, holdingOf, symbolOf, validateBackup, analyze, rangeStart, waterfall } from './core.js';
+import { SCHEMA, holdingOf, symbolOf, validateBackup, analyze, rangeStart, waterfall, exportCSV, importCSV } from './core.js';
 const $ = id => document.getElementById(id);
 const KEY = 'stockfolio.v1', CONFIG = 'stockfolio.settings.v1';
 const yen = n => Number.isFinite(n) ? `¥${Math.round(n).toLocaleString('ja-JP')}` : '—';
@@ -196,6 +196,11 @@ $('topSettingsButton').onclick = openSettings;
 $('dataMenuButton').onclick = () => $('dataMenuDialog').showModal();
 $('mobileBackup').onclick = () => { $('dataMenuDialog').close(); $('backupButton').click(); };
 $('mobileImport').onclick = () => { $('dataMenuDialog').close(); $('importButton').click(); };
+$('csvBackupButton').onclick = () => {
+  const blob = new Blob([exportCSV(state)], {type: 'text/csv;charset=utf-8'}), url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = `stockfolio-backup-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
 $('refreshButton').onclick = () => loadQuotes(true);
 $('backupButton').onclick = () => {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a');
@@ -206,7 +211,8 @@ $('importFile').onchange = async e => {
   const file = e.target.files[0]; if (!file) return;
   try {
     if (file.size > 5e6) throw new Error('ファイルは5MB以内にしてください。');
-    const backup = validateBackup(JSON.parse(await file.text()));
+    const text = await file.text();
+    const backup = file.name.toLowerCase().endsWith('.csv') ? importCSV(text) : validateBackup(JSON.parse(text));
     if (await confirmAction('バックアップを読み込みますか？', `この端末の全ポートフォリオを、ファイル内の${backup.portfolios.length}件で置き換えます。必要なら先に書き出してください。`)) { state = backup; sample = false; persist(); render(); toast('バックアップを復元しました。'); }
   } catch (error) { toast(`読込に失敗しました：${error.message}`); }
   e.target.value = '';

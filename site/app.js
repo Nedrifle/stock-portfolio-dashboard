@@ -1,0 +1,263 @@
+import { SCHEMA, holdingOf, symbolOf, validateBackup, analyze, rangeStart, waterfall } from './core.js';
+const $ = id => document.getElementById(id);
+const KEY = 'stockfolio.v1', CONFIG = 'stockfolio.settings.v1';
+const yen = n => Number.isFinite(n) ? `¥${Math.round(n).toLocaleString('ja-JP')}` : '—';
+const signed = n => Number.isFinite(n) ? `${n > 0 ? '+' : n < 0 ? '−' : ''}${yen(Math.abs(n))}` : '—';
+const pct = n => Number.isFinite(n) ? `${n >= 0 ? '+' : ''}${n.toFixed(2)}%` : '—';
+const number = n => Number(n).toLocaleString('ja-JP', { maximumFractionDigits: 6 });
+const escape = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const dateJP = s => s ? s.replaceAll('-', '/') : '—';
+const classOf = n => n < 0 ? 'negative' : n > 0 ? 'positive' : '';
+const freshState = () => { const id = crypto.randomUUID(); return { schema: SCHEMA, active: id, portfolios: [{ id, name: 'マイポートフォリオ', holdings: [] }] }; };
+let state, settings = {}, quoteData = { symbols: {} }, period = 'ytd', sort = 'value', sortDirection = -1, sample = false, result, toastTimer, rename = false, requestStarted = 0, busy = false, loadWarning = '';
+let memoryToken = '', workflowTimer;
+try { state = localStorage.getItem(KEY) ? validateBackup(JSON.parse(localStorage.getItem(KEY))) : freshState(); }
+catch { state = freshState(); loadWarning = '保存データを読み込めませんでした。元のデータは上書きしていません。バックアップから復元してください。'; }
+try { settings = JSON.parse(localStorage.getItem(CONFIG) || '{}'); } catch { settings = {}; }
+if (!settings.repo && location.hostname.endsWith('.github.io')) {
+  const owner = location.hostname.split('.')[0], repository = location.pathname.split('/').filter(Boolean)[0];
+  settings = { repo: `${owner}/${repository || `${owner}.github.io`}`, branch: 'main' };
+}
+function portfolio() { return state.portfolios.find(p => p.id === state.active) || state.portfolios[0]; }
+const demo = [
+  { id: 'demo-1', symbol: '7011.T', name: '三菱重工業', quantity: 100, cost: 2223 },
+  { id: 'demo-2', symbol: '6501.T', name: '日立製作所', quantity: 100, cost: 3937 },
+  { id: 'demo-3', symbol: '5801.T', name: '古河電気工業', quantity: 100, cost: 3000 },
+  { id: 'demo-4', symbol: '4540.T', name: 'ツムラ', quantity: 100, cost: 4708 }
+];
+function holdings() { return sample ? demo : portfolio().holdings; }
+function persist() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); loadWarning = ''; return true; }
+  catch { toast('端末に保存できません。バックアップを書き出してください。'); return false; }
+}
+function toast(message) { $('toast').textContent = message; $('toast').classList.remove('hidden'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.add('hidden'), 6500); }
+function notice(message, warning = false) { $('notice').classList.toggle('hidden', !message); $('notice').classList.toggle('warning', warning); $('notice').textContent = message; }
+function openSettings() {
+  $('repoInput').value = settings.repo || ''; $('branchInput').value = settings.branch || 'main'; $('tokenInput').value = memoryToken;
+  $('settingsMessage').textContent = ''; $('settingsDialog').showModal();
+}
+async function loadQuotes(showMessage = false) {
+  if (busy) return;
+  busy = true; $('refreshButton').disabled = true;
+  $('quoteStatus').textContent = '公開済みの終値を読み込んでいます…';
+  try {
+    const response = await fetch(`./data/quotes.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (data.schema !== 1 || !data.symbols || Object.values(data.symbols).some(q => !Array.isArray(q.prices))) throw new Error('株価データの形式を確認してください。');
+    quoteData = data;
+    render();
+    if (showMessage) {
+      const missing = holdings().filter(h => !quoteData.symbols[h.symbol]);
+      if (missing.length) { openSettings(); $('settingsMessage').textContent = `未取得：${missing.map(h => h.symbol).join('、')}。下のボタンからYahoo取得を実行してください。`; }
+      else toast('公開済みの株価データを読み込みました。Yahooから再取得するには「株価取得の設定」を開いてください。');
+    }
+  } catch (error) {
+    if (!result) render();
+    $('quoteStatus').textContent = '株価データの読込に失敗';
+    notice(`株価データを取得できませんでした（${error.message}）。接続を確認し、再度「株価を取得」を押してください。`, true);
+  } finally { busy = false; $('refreshButton').disabled = false; }
+}
+function render() {
+  $('portfolioSelect').innerHTML = state.portfolios.map(p => `<option value="${escape(p.id)}">${escape(p.name)}</option>`).join('');
+  $('portfolioSelect').value = state.active;
+  $('modeBadge').textContent = sample ? 'サンプル表示' : 'LOCAL';
+  const hs = holdings(), quotes = quoteData.symbols || {};
+  const latestKnown = hs.map(h => quotes[h.symbol]?.prices.at(-1)?.[0]).filter(Boolean).sort().at(-1);
+  result = analyze(hs, quotes, { start: rangeStart(period, latestKnown) });
+  $('holdingCount').textContent = `${hs.length}銘柄`;
+  $('tableCount').textContent = hs.length;
+  const l = result.latest;
+  $('totalValue').textContent = l ? yen(l.value) : '—';
+  $('totalCost').textContent = hs.length ? yen(hs.reduce((v, h) => v + h.quantity * h.cost, 0)) : '—';
+  $('totalGain').textContent = l ? signed(l.gain) : '—';
+  $('totalGain').className = `metric-value ${l ? classOf(l.gain) : ''}`;
+  $('gainRate').textContent = l ? `損益率 ${l.basis ? pct(l.gain / l.basis * 100) : '—（取得価額0円）'}` : '取得価額との比較';
+  $('dayChange').textContent = l && result.previous ? `前営業日比 ${signed(l.value - result.previous.value)}（${pct((l.value / result.previous.value - 1) * 100)}）` : '直近の終値で評価';
+  $('quoteStatus').textContent = l ? `${dateJP(l.date)} 終値 · Yahoo Finance` : hs.length ? '未取得の銘柄があります' : quoteData.asOf ? `株価収録：${dateJP(quoteData.asOf)}まで` : '銘柄を登録してください';
+  let message = '', warn = false;
+  if (sample) message = 'サンプルの4銘柄を表示しています。あなたの保有内容には保存されません。「銘柄を登録」で通常の画面に戻ります。';
+  if (result.unavailable.length) { message = `未取得の銘柄：${result.unavailable.join('、')}。誤った合計を避けるため評価額は表示していません。「株価取得の設定」から取得してください。`; warn = true; }
+  if (hs.length && !result.unavailable.length && !l) { message = '全銘柄に終値が存在する共通営業日がありません。株価取得の設定からデータを更新してください。'; warn = true; }
+  if (result.latestMismatch) { message = `価格の収録日がそろっていないため、全銘柄の共通営業日 ${dateJP(l.date)} で集計しています。最新データを取得してください。`; warn = true; }
+  const failed = hs.filter(h => quoteData.errors?.[h.symbol]);
+  if (failed.length) { message = `${failed.map(h => h.symbol).join('、')} の最新取得に失敗しました。前回成功分の株価を表示しています。取得設定から再試行してください。`; warn = true; }
+  if (l) {
+    const jstToday = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date());
+    const age = (Date.parse(jstToday) - Date.parse(l.date)) / 86400000;
+    if (age > 4) { message = `株価は ${dateJP(l.date)} までのデータです。最新終値ではない可能性があります。取得設定から更新してください。${message ? ` ${message}` : ''}`; warn = true; }
+  }
+  if (loadWarning) { message = loadWarning; warn = true; }
+  notice(message, warn);
+  renderTrend(); renderWaterfall(); renderTable();
+}
+function renderTrend() {
+  const { daily, peak } = result;
+  $('trendDates').textContent = daily.length ? `${dateJP(daily[0].date)} — ${dateJP(daily.at(-1).date)} · ${daily.length}営業日` : '終値ベース・株式分割調整済み';
+  $('peakLine').innerHTML = peak ? `<span>期間内の最高評価額 <strong>${yen(peak.value)}</strong> ${dateJP(peak.date)}</span><span>最高額から <strong>${pct((daily.at(-1).value / peak.value - 1) * 100)}</strong></span>` : '';
+  if (!daily.length) { $('trendChart').innerHTML = '<div class="empty-chart">銘柄を登録すると評価額の推移が表示されます</div>'; return; }
+  const W = Math.max(300, $('trendChart').clientWidth), H = $('trendChart').clientHeight || 270, left = 55, right = 18, top = 22, bottom = 32;
+  const values = daily.map(d => d.value), min = Math.min(...values), max = Math.max(...values);
+  const pad = (max - min) * .2 || Math.max(max * .1, 1000), low = Math.max(0, min - pad), high = max + pad;
+  const x = i => left + i / Math.max(1, daily.length - 1) * (W - left - right), y = v => top + (high - v) / (high - low) * (H - top - bottom);
+  const path = daily.map((d, i) => `${i ? 'L' : 'M'}${x(i).toFixed(2)},${y(d.value).toFixed(2)}`).join(' ');
+  const grid = Array.from({ length: 5 }, (_, i) => { const value = low + i / 4 * (high - low); const yy = y(value); return `<path d="M${left} ${yy}H${W - right}" stroke="#edf2e9"/><text x="${left - 12}" y="${yy + 3}" text-anchor="end" class="svg-label">${number(Math.round(value / 10000))}万</text>`; }).join('');
+  const labelCount = Math.min(W < 500 ? 4 : 6, daily.length);
+  const labelIndices = [...new Set(Array.from({ length: labelCount }, (_, i) => Math.round(i / Math.max(1, labelCount - 1) * (daily.length - 1))))];
+  const labels = labelIndices.map(i => `<text x="${x(i)}" y="${H - 7}" text-anchor="middle" class="svg-label">${daily[i].date.slice(5).replace('-', '/')}</text>`).join('');
+  const pi = daily.findIndex(d => d === peak);
+  $('trendChart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="時価評価額の推移。期間最高${yen(peak.value)}、${dateJP(peak.date)}"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#a1c9ab" stop-opacity=".35"/><stop offset="1" stop-color="#d8e9d4" stop-opacity=".05"/></linearGradient></defs>${grid}<path d="${path} L${x(daily.length - 1)},${H - bottom} L${left},${H - bottom} Z" fill="url(#area)"/><path d="${path}" fill="none" stroke="#458363" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${x(pi)}" cy="${y(peak.value)}" r="4" fill="#fff" stroke="#458363" stroke-width="2"/>${labels}<line id="hoverLine" x1="0" x2="0" y1="${top}" y2="${H - bottom}" stroke="#91af99" stroke-dasharray="4 4" opacity="0"/><circle id="hoverDot" r="4" fill="#235c43" opacity="0"/><rect id="hoverArea" x="${left}" y="0" width="${W - left - right}" height="${H}" fill="transparent"/></svg><div id="chartTooltip" class="tooltip hidden"></div>`;
+  const area = $('hoverArea'), tip = $('chartTooltip');
+  area.addEventListener('pointermove', e => {
+    const rect = area.ownerSVGElement.getBoundingClientRect(), px = (e.clientX - rect.left) / rect.width * W;
+    const i = Math.max(0, Math.min(daily.length - 1, Math.round((px - left) / (W - left - right) * (daily.length - 1))));
+    const d = daily[i];
+    $('hoverLine').setAttribute('x1', x(i)); $('hoverLine').setAttribute('x2', x(i)); $('hoverLine').setAttribute('opacity', 1);
+    $('hoverDot').setAttribute('cx', x(i)); $('hoverDot').setAttribute('cy', y(d.value)); $('hoverDot').setAttribute('opacity', 1);
+    tip.innerHTML = `<small>${dateJP(d.date)} 終値</small><br><strong>${yen(d.value)}</strong>`;
+    tip.classList.remove('hidden'); tip.style.left = `${Math.max(0, Math.min(rect.width - 170, e.clientX - rect.left + 12))}px`; tip.style.top = '0px';
+  });
+  area.addEventListener('pointerleave', () => { tip.classList.add('hidden'); $('hoverLine').setAttribute('opacity', 0); $('hoverDot').setAttribute('opacity', 0); });
+}
+function renderWaterfall() {
+  $('breakdownDate').textContent = result.latest ? `${dateJP(result.latest.date)} 終値 · 取得価額との差額` : '銘柄ごとの貢献をウォーターフォールで表示';
+  if (!result.rows.length) { $('waterfallChart').innerHTML = '<div class="empty-chart" style="height:220px">銘柄ごとの利益・損失がここに表示されます</div>'; return; }
+  const bars = waterfall(result.rows), total = result.latest.gain, W = Math.max($('waterfallChart').clientWidth, bars.length * 65 + 130), H = 240, left = 65, top = 27, bottom = 48;
+  const stops = [0, total, ...bars.flatMap(b => [b.start, b.end])], lo = Math.min(...stops), hi = Math.max(...stops), pad = (hi - lo) * .15 || 1000;
+  const y = v => top + (hi + pad - v) / (hi - lo + 2 * pad) * (H - top - bottom), width = (W - left - 15) / (bars.length + 1), bw = width * .6;
+  const label = n => `${n < 0 ? '−' : ''}${number(Math.round(Math.abs(n) / 10000))}万`;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:${W}px" role="img" aria-label="含み損益内訳。合計${signed(total)}"><line x1="${left}" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="#dbe4d7"/>`;
+  for (let i = 0; i < 4; i++) { const v = lo + i / 3 * (hi - lo); svg += `<text x="${left - 10}" y="${y(v) + 3}" text-anchor="end" class="svg-label">${label(v)}</text>`; }
+  bars.forEach((b, i) => {
+    const xx = left + width * i + width * .2, yy = y(Math.max(b.start, b.end)), height = Math.max(1, Math.abs(y(b.start) - y(b.end)));
+    svg += `<g><title>${escape(b.name)}：${signed(b.gain)}</title><rect x="${xx}" y="${yy}" width="${bw}" height="${height}" rx="2" fill="${b.gain >= 0 ? '#518b6e' : '#ca8070'}"/><text x="${xx + bw / 2}" y="${b.gain >= 0 ? yy - 7 : yy + height + 13}" class="svg-small" text-anchor="middle">${label(b.gain)}</text><text x="${xx + bw / 2}" y="${H - 22}" class="svg-small" text-anchor="middle">${escape(b.symbol.replace('.T', ''))}</text><text x="${xx + bw / 2}" y="${H - 8}" class="svg-small" text-anchor="middle">${escape(b.name.slice(0, 5))}</text>${i < bars.length - 1 ? `<line x1="${xx + bw}" x2="${xx + width}" y1="${y(b.end)}" y2="${y(b.end)}" stroke="#c9d7c9" stroke-dasharray="2 2"/>` : ''}</g>`;
+  });
+  const tx = left + width * bars.length + width * .2, ty = y(Math.max(0, total));
+  svg += `<rect x="${tx}" y="${ty}" width="${bw}" height="${Math.max(1, Math.abs(y(total) - y(0)))}" fill="#254940" rx="2"/><text x="${tx + bw / 2}" y="${ty - 8}" class="svg-small" text-anchor="middle">${label(total)}</text><text x="${tx + bw / 2}" y="${H - 18}" class="svg-small" text-anchor="middle">合計</text></svg>`;
+  $('waterfallChart').innerHTML = svg;
+}
+function renderTable() {
+  const hs = holdings(), query = $('searchInput').value.trim().toLowerCase(), bySymbol = new Map(result.rows.map(r => [r.symbol, r]));
+  const rows = hs.map(h => bySymbol.get(h.symbol) || { ...h, name: h.name || quoteData.symbols[h.symbol]?.name || h.symbol, costTotal: h.cost * h.quantity });
+  const filtered = rows.filter(r => `${r.name} ${r.symbol}`.toLowerCase().includes(query)).sort((a, b) => ((a[sort] ?? -Infinity) - (b[sort] ?? -Infinity)) * sortDirection);
+  $('holdingsBody').innerHTML = filtered.map(r => `<tr><td class="name-cell">${escape(r.name)}<span class="symbol">${escape(r.symbol)} · 東証</span></td><td>${number(r.quantity)}株</td><td>${yen(r.cost)}</td><td>${yen(r.costTotal)}</td><td>${yen(r.close)}</td><td><strong>${yen(r.value)}</strong></td><td class="${classOf(r.gain)}"><strong>${signed(r.gain)}</strong><span class="rate">${pct(r.gainPct)}</span></td><td><button class="text-button" data-edit="${escape(r.id)}" ${sample ? 'disabled' : ''}>編集</button><button class="text-button" data-delete="${escape(r.id)}" ${sample ? 'disabled' : ''}>削除</button></td></tr>`).join('');
+  if (hs.length && !filtered.length) $('holdingsBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#8a9b8a">該当する銘柄がありません</td></tr>';
+  const l = result.latest;
+  $('holdingsFoot').innerHTML = l ? `<tr><td>全銘柄合計</td><td>${hs.length}銘柄</td><td>—</td><td>${yen(l.basis)}</td><td>—</td><td>${yen(l.value)}</td><td class="${classOf(l.gain)}">${signed(l.gain)}</td><td></td></tr>` : '';
+  $('emptyState').classList.toggle('hidden', !!hs.length);
+}
+function editHolding(id) {
+  if (sample) { sample = false; render(); }
+  const h = portfolio().holdings.find(x => x.id === id);
+  $('holdingTitle').textContent = h ? '銘柄を編集' : '銘柄を登録';
+  $('holdingId').value = h?.id || ''; $('symbolInput').value = h?.symbol.replace('.T', '') || '';
+  $('nameInput').value = h?.name || ''; $('quantityInput').value = h?.quantity ?? ''; $('costInput').value = h?.cost ?? '';
+  $('holdingError').textContent = ''; $('holdingDialog').showModal();
+}
+function confirmAction(title, message) {
+  $('confirmTitle').textContent = title; $('confirmText').textContent = message; $('confirmDialog').showModal();
+  return new Promise(resolve => {
+    let done = false;
+    const finish = yes => { if (done) return; done = true; $('confirmDialog').close(); $('confirmOK').onclick = null; $('confirmCancel').onclick = null; $('confirmDialog').removeEventListener('cancel', cancel); resolve(yes); };
+    const cancel = () => finish(false);
+    $('confirmOK').onclick = () => finish(true); $('confirmCancel').onclick = cancel; $('confirmDialog').addEventListener('cancel', cancel);
+  });
+}
+$('holdingForm').addEventListener('submit', e => {
+  e.preventDefault();
+  try {
+    const item = holdingOf({ id: $('holdingId').value, symbol: $('symbolInput').value, name: $('nameInput').value, quantity: $('quantityInput').value, cost: $('costInput').value });
+    const p = portfolio();
+    if (p.holdings.some(h => h.symbol === item.symbol && h.id !== item.id)) throw new Error('この銘柄は登録済みです。既存の銘柄を編集してください。');
+    p.holdings = [...p.holdings.filter(h => h.id !== item.id), item];
+    persist(); $('holdingDialog').close(); render(); toast('銘柄を保存しました。');
+  } catch (error) { $('holdingError').textContent = error.message; }
+});
+$('holdingsBody').addEventListener('click', async e => {
+  const edit = e.target.closest('[data-edit]'), del = e.target.closest('[data-delete]');
+  if (sample) return;
+  if (edit) editHolding(edit.dataset.edit);
+  if (del && await confirmAction('銘柄を削除しますか？', 'この端末のポートフォリオから削除します。公開株価データは残ります。')) {
+    portfolio().holdings = portfolio().holdings.filter(h => h.id !== del.dataset.delete); persist(); render(); toast('銘柄を削除しました。');
+  }
+});
+$('addButton').onclick = $('emptyAdd').onclick = () => editHolding();
+$('sampleButton').onclick = () => { sample = true; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+$('portfolioSelect').onchange = e => { state.active = e.target.value; sample = false; persist(); render(); };
+function portfolioDialog(isRename) { rename = isRename; $('portfolioTitle').textContent = rename ? 'ポートフォリオ名を変更' : 'ポートフォリオを作成'; $('portfolioName').value = rename ? portfolio().name : ''; $('portfolioDialog').showModal(); }
+$('addPortfolio').onclick = () => portfolioDialog(false); $('renamePortfolio').onclick = () => portfolioDialog(true);
+$('portfolioForm').onsubmit = e => { e.preventDefault(); const name = $('portfolioName').value.trim(); if (!name) return; if (rename) portfolio().name = name; else { const id = crypto.randomUUID(); state.portfolios.push({ id, name, holdings: [] }); state.active = id; } sample = false; persist(); $('portfolioDialog').close(); render(); };
+$('searchInput').oninput = renderTable;
+document.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { sortDirection = sort === b.dataset.sort ? -sortDirection : -1; sort = b.dataset.sort; renderTable(); });
+document.querySelectorAll('[data-period]').forEach(b => b.onclick = () => { period = b.dataset.period; document.querySelectorAll('[data-period]').forEach(x => x.classList.toggle('selected', x === b)); render(); });
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
+$('helpButton').onclick = () => $('helpDialog').showModal(); $('settingsButton').onclick = openSettings;
+$('topSettingsButton').onclick = openSettings;
+$('dataMenuButton').onclick = () => $('dataMenuDialog').showModal();
+$('mobileBackup').onclick = () => { $('dataMenuDialog').close(); $('backupButton').click(); };
+$('mobileImport').onclick = () => { $('dataMenuDialog').close(); $('importButton').click(); };
+$('refreshButton').onclick = () => loadQuotes(true);
+$('backupButton').onclick = () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = `stockfolio-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+$('importButton').onclick = () => $('importFile').click();
+$('importFile').onchange = async e => {
+  const file = e.target.files[0]; if (!file) return;
+  try {
+    if (file.size > 5e6) throw new Error('ファイルは5MB以内にしてください。');
+    const backup = validateBackup(JSON.parse(await file.text()));
+    if (await confirmAction('バックアップを読み込みますか？', `この端末の全ポートフォリオを、ファイル内の${backup.portfolios.length}件で置き換えます。必要なら先に書き出してください。`)) { state = backup; sample = false; persist(); render(); toast('バックアップを復元しました。'); }
+  } catch (error) { toast(`読込に失敗しました：${error.message}`); }
+  e.target.value = '';
+};
+function configFromForm() {
+  const repo = $('repoInput').value.trim(), branch = $('branchInput').value.trim() || 'main';
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+$/.test(repo)) throw new Error('リポジトリを owner/repository の形式で入力してください。');
+  if (!/^[A-Za-z0-9_./-]+$/.test(branch) || branch.includes('..')) throw new Error('ブランチ名を確認してください。');
+  return { repo, branch };
+}
+$('saveSettings').onclick = () => { try { settings = configFromForm(); localStorage.setItem(CONFIG, JSON.stringify(settings)); memoryToken = $('tokenInput').value.trim(); $('settingsDialog').close(); toast('取得設定を保存しました。トークンは端末には保存していません。'); } catch (e) { $('settingsMessage').textContent = e.message; } };
+$('workflowButton').onclick = () => { try { const c = configFromForm(); window.open(`https://github.com/${c.repo}/actions/workflows/update-prices.yml`, '_blank', 'noopener,noreferrer'); } catch (e) { $('settingsMessage').textContent = e.message; } };
+async function github(path, config, token, options = {}) {
+  const res = await fetch(`https://api.github.com/repos/${config.repo}${path}`, { ...options, headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', Authorization: `Bearer ${token}`, ...options.headers } });
+  if (!res.ok) {
+    if (res.status === 401) throw new Error('トークンが無効、または期限切れです。');
+    if (res.status === 403 || res.status === 404) throw new Error('対象リポジトリのActions読み書き権限とワークフローの配置を確認してください。');
+    throw new Error(`GitHubへのリクエストに失敗しました（${res.status}）。`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+$('dispatchButton').onclick = async () => {
+  try {
+    const config = configFromForm(), token = $('tokenInput').value.trim() || memoryToken;
+    if (!token) throw new Error('GitHub tokenを入力するか、「GitHubで実行画面を開く」から実行してください。');
+    const symbols = [...new Set(state.portfolios.flatMap(p => p.holdings.map(h => symbolOf(h.symbol))))].join(',');
+    if (!symbols) throw new Error('先に銘柄を登録してください。');
+    $('dispatchButton').disabled = true; $('settingsMessage').textContent = '株価取得を依頼しています…';
+    const previous = await github('/actions/workflows/update-prices.yml/runs?event=workflow_dispatch&per_page=20', config, token);
+    const oldIds = new Set(previous.workflow_runs.map(r => r.id));
+    requestStarted = Date.now();
+    await github('/actions/workflows/update-prices.yml/dispatches', config, token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ref: config.branch, inputs: { symbols } }) });
+    memoryToken = token; settings = config; localStorage.setItem(CONFIG, JSON.stringify(settings));
+    $('settingsMessage').textContent = 'Yahoo株価をGitHubで取得中です。完了まで数分かかります。このページを開いたままお待ちください。';
+    clearTimeout(workflowTimer);
+    const poll = async () => {
+      try {
+        const runs = await github('/actions/workflows/update-prices.yml/runs?event=workflow_dispatch&per_page=20', config, memoryToken);
+        const run = runs.workflow_runs.find(r => !oldIds.has(r.id) && r.head_branch === config.branch && Date.parse(r.created_at) >= requestStarted - 10000);
+        if (run?.status === 'completed') {
+          if (run.conclusion !== 'success') throw new Error('取得・公開に失敗しました。GitHubの実行画面で詳細を確認してください。以前の株価データは保持しています。');
+          $('settingsMessage').textContent = '取得と公開が完了しました。最新データを読み込みます。';
+          await loadQuotes(false); $('dispatchButton').disabled = false; toast('株価の取得・公開が完了しました。'); return;
+        }
+        if (Date.now() - requestStarted > 10 * 60000) throw new Error('処理が長引いています。GitHubの実行画面で確認し、完了後に「株価を取得」を押してください。');
+        workflowTimer = setTimeout(poll, 15000);
+      } catch (error) { $('settingsMessage').textContent = error.message; $('dispatchButton').disabled = false; }
+    };
+    workflowTimer = setTimeout(poll, 15000);
+  } catch (error) { $('settingsMessage').textContent = error.message; $('dispatchButton').disabled = false; }
+};
+let resizeTimer;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { renderTrend(); renderWaterfall(); }, 120); });
+render(); loadQuotes();

@@ -11,6 +11,7 @@ const classOf = n => n < 0 ? 'negative' : n > 0 ? 'positive' : '';
 const freshState = () => { const id = crypto.randomUUID(); return { schema: SCHEMA, active: id, portfolios: [{ id, name: 'マイポートフォリオ', holdings: [] }] }; };
 let state, settings = {}, quoteData = { symbols: {} }, period = 'ytd', sort = 'value', sortDirection = -1, sample = false, result, toastTimer, rename = false, requestStarted = 0, busy = false, loadWarning = '';
 let memoryToken = '', workflowTimer;
+let valueVisible = false;
 try { state = localStorage.getItem(KEY) ? validateBackup(JSON.parse(localStorage.getItem(KEY))) : freshState(); }
 catch { state = freshState(); loadWarning = '保存データを読み込めませんでした。元のデータは上書きしていません。バックアップから復元してください。'; }
 try { settings = JSON.parse(localStorage.getItem(CONFIG) || '{}'); } catch { settings = {}; }
@@ -68,12 +69,15 @@ function render() {
   $('holdingCount').textContent = `${hs.length}銘柄`;
   $('tableCount').textContent = hs.length;
   const l = result.latest;
-  $('totalValue').textContent = l ? yen(l.value) : '—';
+  $('totalValue').textContent = valueVisible ? (l ? yen(l.value) : '—') : '××円';
+  $('toggleValueButton').textContent = valueVisible ? '非表示' : '表示';
+  $('toggleValueButton').setAttribute('aria-pressed', String(valueVisible));
+  $('toggleValueButton').setAttribute('aria-label', valueVisible ? '時価評価額を非表示' : '時価評価額を表示');
   $('totalCost').textContent = hs.length ? yen(hs.reduce((v, h) => v + h.quantity * h.cost, 0)) : '—';
   $('totalGain').textContent = l ? signed(l.gain) : '—';
   $('totalGain').className = `metric-value ${l ? classOf(l.gain) : ''}`;
   $('gainRate').textContent = l ? `損益率 ${l.basis ? pct(l.gain / l.basis * 100) : '—（取得価額0円）'}` : '取得価額との比較';
-  $('dayChange').textContent = l && result.previous ? `前営業日比 ${signed(l.value - result.previous.value)}（${pct((l.value / result.previous.value - 1) * 100)}）` : '直近の終値で評価';
+  $('dayChange').textContent = !valueVisible ? '表示ボタンで金額を確認できます' : l && result.previous ? `前営業日比 ${signed(l.value - result.previous.value)}（${pct((l.value / result.previous.value - 1) * 100)}）` : '直近の終値で評価';
   $('quoteStatus').textContent = l ? `${dateJP(l.date)} 終値 · Yahoo Finance` : hs.length ? '未取得の銘柄があります' : quoteData.asOf ? `株価収録：${dateJP(quoteData.asOf)}まで` : '銘柄を登録してください';
   let message = '', warn = false;
   if (sample) message = 'サンプルの4銘柄を表示しています。あなたの保有内容には保存されません。「銘柄を登録」で通常の画面に戻ります。';
@@ -183,7 +187,8 @@ $('holdingsBody').addEventListener('click', async e => {
 });
 $('addButton').onclick = $('emptyAdd').onclick = () => editHolding();
 $('sampleButton').onclick = () => { sample = true; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-$('portfolioSelect').onchange = e => { state.active = e.target.value; sample = false; persist(); render(); };
+$('portfolioSelect').onchange = e => { state.active = e.target.value; sample = false; valueVisible = false; persist(); render(); };
+$('toggleValueButton').onclick = () => { valueVisible = !valueVisible; render(); };
 function portfolioDialog(isRename) { rename = isRename; $('portfolioTitle').textContent = rename ? 'ポートフォリオ名を変更' : 'ポートフォリオを作成'; $('portfolioName').value = rename ? portfolio().name : ''; $('portfolioDialog').showModal(); }
 $('addPortfolio').onclick = () => portfolioDialog(false); $('renamePortfolio').onclick = () => portfolioDialog(true);
 $('portfolioForm').onsubmit = e => { e.preventDefault(); const name = $('portfolioName').value.trim(); if (!name) return; if (rename) portfolio().name = name; else { const id = crypto.randomUUID(); state.portfolios.push({ id, name, holdings: [] }); state.active = id; } sample = false; persist(); $('portfolioDialog').close(); render(); };

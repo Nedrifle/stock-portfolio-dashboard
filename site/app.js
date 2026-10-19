@@ -1,4 +1,4 @@
-import { SCHEMA, holdingOf, symbolOf, validateBackup, analyze, rangeStart, waterfall, exportCSV, importCSV } from './core.js?v=period-minimum-1';
+import { SCHEMA, holdingOf, symbolOf, validateBackup, analyze, rangeStart, waterfall, gainHistory, exportCSV, importCSV } from './core.js?v=stock-gain-history-1';
 const $ = id => document.getElementById(id);
 const KEY = 'stockfolio.v1', CONFIG = 'stockfolio.settings.v1';
 const yen = n => Number.isFinite(n) ? `¥${Math.round(n).toLocaleString('ja-JP')}` : '—';
@@ -109,22 +109,23 @@ function render() {
 function renderTrend() { drawTrend(result); }
 function drawTrend(analysis, prefix = '', label = '時価評価額の推移') {
   const id = name => prefix ? prefix + name[0].toUpperCase() + name.slice(1) : name;
-  const chart = $(prefix ? 'stockTrendChart' : 'trendChart');
+  const chart = $(prefix ? `${prefix}TrendChart` : 'trendChart');
+  const gain = prefix === 'stockGain', format = gain ? signed : yen;
   const { daily, peak, trough } = analysis;
-  $(prefix ? 'stockTrendDates' : 'trendDates').textContent = daily.length ? `${dateJP(daily[0].date)} — ${dateJP(daily.at(-1).date)} · ${daily.length}営業日 · 確定終値` : '終値ベース・株式分割調整済み';
-  $(prefix ? 'stockPeakLine' : 'peakLine').innerHTML = peak ? `<span>期間内の最高評価額 <strong>${yen(peak.value)}</strong> ${dateJP(peak.date)}</span><span>期間内の最低評価額 <strong>${yen(trough.value)}</strong> ${dateJP(trough.date)}</span><span>直近終値の最高額比 <strong>${pct((daily.at(-1).value / peak.value - 1) * 100)}</strong></span>` : '';
+  $(prefix ? `${prefix}TrendDates` : 'trendDates').textContent = daily.length ? `${dateJP(daily[0].date)} — ${dateJP(daily.at(-1).date)} · ${daily.length}営業日 · 確定終値` : '終値ベース・株式分割調整済み';
+  $(prefix ? `${prefix}PeakLine` : 'peakLine').innerHTML = peak ? `<span>期間内の最高${gain ? '含み損益' : '評価額'} <strong>${format(peak.value)}</strong> ${dateJP(peak.date)}</span><span>期間内の最低${gain ? '含み損益' : '評価額'} <strong>${format(trough.value)}</strong> ${dateJP(trough.date)}</span>${gain ? `<span>直近終値の含み損益 <strong>${signed(daily.at(-1).value)}</strong></span>` : `<span>直近終値の最高額比 <strong>${pct((daily.at(-1).value / peak.value - 1) * 100)}</strong></span>`}` : '';
   if (!daily.length) { chart.innerHTML = '<div class="empty-chart">銘柄を登録すると評価額の推移が表示されます</div>'; return; }
   const W = Math.max(300, chart.clientWidth), H = chart.clientHeight || 270, left = 55, right = 18, top = 22, bottom = 32;
   const values = daily.map(d => d.value), min = Math.min(...values), max = Math.max(...values);
-  const pad = (max - min) * .2 || Math.max(max * .1, 1000), low = Math.max(0, min - pad), high = max + pad;
+  const pad = (max - min) * .2 || Math.max(max * .1, 1000), low = gain ? Math.min(0,min)-pad : Math.max(0,min-pad), high = (gain ? Math.max(0,max) : max) + pad;
   const x = i => left + i / Math.max(1, daily.length - 1) * (W - left - right), y = v => top + (high - v) / (high - low) * (H - top - bottom);
   const path = daily.map((d, i) => `${i ? 'L' : 'M'}${x(i).toFixed(2)},${y(d.value).toFixed(2)}`).join(' ');
-  const grid = Array.from({ length: 5 }, (_, i) => { const value = low + i / 4 * (high - low); const yy = y(value); return `<path d="M${left} ${yy}H${W - right}" stroke="#edf2e9"/><text x="${left - 12}" y="${yy + 3}" text-anchor="end" class="svg-label">${number(Math.round(value / 10000))}万</text>`; }).join('');
+  const grid = Array.from({ length: 5 }, (_, i) => { const value = low + i / 4 * (high - low); const yy = y(value); return `<path d="M${left} ${yy}H${W - right}" stroke="#edf2e9"/><text x="${left - 12}" y="${yy + 3}" text-anchor="end" class="svg-label">${gain && Math.max(Math.abs(low),Math.abs(high)) < 10000 ? `${number(Math.round(value))}円` : `${number(gain ? Math.round(value/1000)/10 : Math.round(value/10000))}万`}</text>`; }).join('');
   const labelCount = Math.min(W < 500 ? 4 : 6, daily.length);
   const labelIndices = [...new Set(Array.from({ length: labelCount }, (_, i) => Math.round(i / Math.max(1, labelCount - 1) * (daily.length - 1))))];
   const labels = labelIndices.map(i => `<text x="${x(i)}" y="${H - 7}" text-anchor="middle" class="svg-label">${daily[i].date.slice(5).replace('-', '/')}</text>`).join('');
   const pi = daily.findIndex(d => d === peak), ti = daily.findIndex(d => d === trough);
-  chart.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${escape(label)}。期間最高${yen(peak.value)}、${dateJP(peak.date)}。期間最低${yen(trough.value)}、${dateJP(trough.date)}"><defs><linearGradient id="${id('area')}" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#a1c9ab" stop-opacity=".35"/><stop offset="1" stop-color="#d8e9d4" stop-opacity=".05"/></linearGradient></defs>${grid}<path d="${path} L${x(daily.length - 1)},${H - bottom} L${left},${H - bottom} Z" fill="url(#${id('area')})"/><path d="${path}" fill="none" stroke="#458363" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${x(pi)}" cy="${y(peak.value)}" r="4" fill="#fff" stroke="#458363" stroke-width="2"/><circle cx="${x(ti)}" cy="${y(trough.value)}" r="4" fill="#fff" stroke="#bd5e50" stroke-width="2"/>${labels}<line id="${id('hoverLine')}" x1="0" x2="0" y1="${top}" y2="${H - bottom}" stroke="#91af99" stroke-dasharray="4 4" opacity="0"/><circle id="${id('hoverDot')}" r="4" fill="#235c43" opacity="0"/><rect id="${id('hoverArea')}" x="${left}" y="0" width="${W - left - right}" height="${H}" fill="transparent"/></svg><div id="${id('chartTooltip')}" class="tooltip hidden"></div>`;
+  chart.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${escape(label)}。期間最高${format(peak.value)}、${dateJP(peak.date)}。期間最低${format(trough.value)}、${dateJP(trough.date)}"><defs><linearGradient id="${id('area')}" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#a1c9ab" stop-opacity=".35"/><stop offset="1" stop-color="#d8e9d4" stop-opacity=".05"/></linearGradient></defs>${grid}${gain ? `<line x1="${left}" x2="${W-right}" y1="${y(0)}" y2="${y(0)}" stroke="#8fa799" stroke-dasharray="4 4"/>` : ''}<path d="${path} L${x(daily.length - 1)},${gain ? y(0) : H-bottom} L${left},${gain ? y(0) : H-bottom} Z" fill="url(#${id('area')})"/><path d="${path}" fill="none" stroke="#458363" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${x(pi)}" cy="${y(peak.value)}" r="4" fill="#fff" stroke="#458363" stroke-width="2"/><circle cx="${x(ti)}" cy="${y(trough.value)}" r="4" fill="#fff" stroke="#bd5e50" stroke-width="2"/>${labels}<line id="${id('hoverLine')}" x1="0" x2="0" y1="${top}" y2="${H - bottom}" stroke="#91af99" stroke-dasharray="4 4" opacity="0"/><circle id="${id('hoverDot')}" r="4" fill="#235c43" opacity="0"/><rect id="${id('hoverArea')}" x="${left}" y="0" width="${W - left - right}" height="${H}" fill="transparent"/></svg><div id="${id('chartTooltip')}" class="tooltip hidden"></div>`;
   const area = $(id('hoverArea')), tip = $(id('chartTooltip'));
   area.addEventListener('pointermove', e => {
     const rect = area.ownerSVGElement.getBoundingClientRect(), px = (e.clientX - rect.left) / rect.width * W;
@@ -132,7 +133,7 @@ function drawTrend(analysis, prefix = '', label = '時価評価額の推移') {
     const d = daily[i];
     $(id('hoverLine')).setAttribute('x1', x(i)); $(id('hoverLine')).setAttribute('x2', x(i)); $(id('hoverLine')).setAttribute('opacity', 1);
     $(id('hoverDot')).setAttribute('cx', x(i)); $(id('hoverDot')).setAttribute('cy', y(d.value)); $(id('hoverDot')).setAttribute('opacity', 1);
-    tip.innerHTML = `<small>${dateJP(d.date)} 終値</small><br><strong>${yen(d.value)}</strong>`;
+    tip.innerHTML = `<small>${dateJP(d.date)} 終値</small><br><strong>${format(d.value)}</strong>`;
     tip.classList.remove('hidden'); tip.style.left = `${Math.max(0, Math.min(rect.width - 170, e.clientX - rect.left + 12))}px`; tip.style.top = '0px';
   });
   area.addEventListener('pointerleave', () => { tip.classList.add('hidden'); $(id('hoverLine')).setAttribute('opacity', 0); $(id('hoverDot')).setAttribute('opacity', 0); });
@@ -322,7 +323,11 @@ function renderStockValue() {
   const asOf = h ? quotes[h.symbol]?.prices?.at(-1)?.[0] : null;
   const data = analyze(h ? [h] : [],quotes,{start:rangeStart(stockPeriod,asOf)});
   $('stockValueInfo').textContent = h ? `${h.symbol} · 保有株数 ${number(h.quantity)}株${data.unavailable.length ? ' · 株価が未取得です。株価取得の設定から取得してください。' : ''}` : '銘柄を登録すると選択できます。';
-  if (activeView === 'stock') drawTrend(data,'stock',`${name}の時価評価額の推移`);
+  $('stockGainTitle').textContent = name ? `${name}の含み損益の推移` : '含み損益の推移';
+  if (activeView === 'stock') {
+    drawTrend(data,'stock',`${name}の時価評価額の推移`);
+    drawTrend(gainHistory(data,h ? h.quantity*h.cost : null),'stockGain',`${name}の含み損益の推移`);
+  }
 }
 document.querySelectorAll('a[href="#overview"], a[href="#holdings"]').forEach(a => a.addEventListener('click', () => setView('overview')));
 $('overviewTab').onclick = () => setView('overview');

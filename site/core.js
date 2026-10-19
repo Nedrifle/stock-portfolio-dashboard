@@ -136,3 +136,8 @@ export function importCSV(text) {
   const portfolios = [...groups.values()];
   return validateBackup({schema: SCHEMA, portfolios, active: portfolios[0]?.id});
 }
+
+export function gainHistory(analysis, basis) {
+  const daily = Number.isFinite(basis) ? analysis.daily.map(d => ({...d, value:d.value-basis})) : [];
+  return {daily, peak:daily.reduce((a,d)=>!a || d.value>a.value ? d : a,null), trough:daily.reduce((a,d)=>!a || d.value<a.value ? d : a,null)};
+}

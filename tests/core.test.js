@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { symbolOf, holdingOf, analyze, validateBackup, waterfall, rangeStart, importCSV, exportCSV } from '../site/core.js';
+import { symbolOf, holdingOf, analyze, validateBackup, waterfall, gainHistory, rangeStart, importCSV, exportCSV } from '../site/core.js';
 test('codes normalize Japanese full-width and alphanumeric Tokyo codes', () => {
   assert.equal(symbolOf('７２０３'), '7203.T'); assert.equal(symbolOf('285a'), '285A.T');
   assert.throws(() => symbolOf('../secret')); assert.throws(() => symbolOf('AAPL'));
@@ -92,4 +92,14 @@ test('period minimum uses closing history within the selected range', () => {
   assert.deepEqual(analyze(hs,q,{start:'2026-09-01'}).trough,{date:'2026-10-16',value:320000});
   assert.equal(analyze(hs,q,{start:'2027-01-01'}).trough,null);
   assert.equal(analyze([],q).trough,null);
+});
+
+test('gain history subtracts acquisition basis and preserves the filtered dates including losses', () => {
+  const data = {daily:[{date:'2026-10-15',value:800},{date:'2026-10-16',value:1200},{date:'2026-10-19',value:1000}]};
+  const g = gainHistory(data,1000);
+  assert.deepEqual(g.daily.map(d=>d.value),[-200,200,0]);
+  assert.equal(g.peak.date,'2026-10-16'); assert.equal(g.trough.date,'2026-10-15');
+  assert.deepEqual(g.daily.map(d=>d.date),data.daily.map(d=>d.date));
+  assert.deepEqual(gainHistory({daily:[]},1000),{daily:[],peak:null,trough:null});
+  assert.equal(data.daily[0].value,800);
 });

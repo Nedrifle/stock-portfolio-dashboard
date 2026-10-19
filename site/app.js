@@ -151,7 +151,7 @@ function drawWaterfall(target, rows, total, title, daily = false) {
   const bars = waterfall(rows), W = Math.max($(target).clientWidth, bars.length * (daily ? 100 : 65) + 130), H = daily ? 260 : 240, left = 65, top = 27, bottom = daily ? 65 : 48;
   const stops = [0, total, ...bars.flatMap(b => [b.start, b.end])], lo = Math.min(...stops), hi = Math.max(...stops), pad = (hi - lo) * .15 || 1000;
   const y = v => top + (hi + pad - v) / (hi - lo + 2 * pad) * (H - top - bottom), width = (W - left - 15) / (bars.length + 1), bw = width * .6;
-  const label = n => `${n < 0 ? '−' : ''}${number(Math.round(Math.abs(n) / 10000))}万`;
+  const label = n => daily ? yen(n) : `${n < 0 ? '−' : ''}${number(Math.round(Math.abs(n) / 10000))}万`;
   let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:${W}px" role="img" aria-label="${title}。合計${signed(total)}"><line x1="${left}" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="#dbe4d7"/>`;
   for (let i = 0; i < 4; i++) { const v = lo + i / 3 * (hi - lo); svg += `<text x="${left - 10}" y="${y(v) + 3}" text-anchor="end" class="svg-label">${label(v)}</text>`; }
   bars.forEach((b, i) => {

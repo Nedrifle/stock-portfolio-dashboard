@@ -3,3 +3,5 @@
 .value-visibility-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:18px;position:relative;z-index:1}.value-visibility-row .metric-value{margin-top:0}.value-visibility-button{border:1px solid #7d9f8f;border-radius:5px;background:#ffffff12;color:#edf7ef;font-size:11px;padding:7px 12px;min-height:32px;flex-shrink:0}.value-visibility-button:hover{background:#ffffff24}
 
 .daily-change-total{display:flex;flex-direction:column;gap:6px;align-items:flex-end;font-size:11px;color:var(--muted)}.daily-change-total strong{font-size:28px;font-variant-numeric:tabular-nums}.daily-change-panel .chart-key{margin-bottom:12px}.daily-change-panel .waterfall-shell svg{height:260px}
+
+.waterfall-shell{max-height:620px;overflow:auto}.waterfall-shell svg{min-width:320px}

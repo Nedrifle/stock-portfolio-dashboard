@@ -42,7 +42,7 @@
     <section id="stockValuePanel" role="tabpanel" aria-labelledby="stockValueTab" class="hidden">
       <div class="panel"><div class="eyebrow">STOCK VALUE</div><h2>銘柄別時価評価額</h2><div class="stock-selector"><label for="stockValueSelect">表示する銘柄</label><select id="stockValueSelect"></select></div><p id="stockValueInfo" class="small-note"></p></div>
       <section class="panel trend-panel"><div class="panel-heading"><div><h2 id="stockTrendTitle">時価評価額の推移</h2><p id="stockTrendDates">銘柄を選択してください</p></div><div class="periods" role="group" aria-label="銘柄別の表示期間"><button data-stock-period="1">1か月</button><button data-stock-period="3">3か月</button><button data-stock-period="6">6か月</button><button data-stock-period="ytd" class="selected">年初来</button><button data-stock-period="all">全期間</button></div></div><div id="stockPeakLine" class="peak-line"></div><div id="stockTrendChart" class="trend-chart"></div><div class="chart-caption"><span>選択銘柄の時価評価額</span><span>現在の保有株数 × 分割調整済み終値。現在株数を全期間保有した場合の推移です。</span></div></section>
-      <section class="panel trend-panel"><div class="panel-heading"><div><h2 id="stockGainTitle">含み損益の推移</h2><p id="stockGainTrendDates">銘柄を選択してください</p></div></div><div id="stockGainPeakLine" class="peak-line"></div><div id="stockGainTrendChart" class="trend-chart"></div><div class="chart-caption"><span>選択銘柄の含み損益</span><span>時価評価額 − 現在の取得価額。銘柄と表示期間は上のグラフと連動します。</span></div></section>
+      <section class="panel trend-panel"><div class="panel-heading"><div><h2 id="stockGainTitle">含み損益の推移</h2><p id="stockGainTrendDates">銘柄を選択してください</p></div><div class="chart-key"><span><i class="legend-dot" style="background:#2878cf"></i> 利益</span><span><i class="legend-dot" style="background:#d04444"></i> 損失</span></div></div><div id="stockGainPeakLine" class="peak-line"></div><div id="stockGainTrendChart" class="trend-chart"></div><div class="chart-caption"><span>選択銘柄の含み損益</span><span>時価評価額 − 現在の取得価額。銘柄と表示期間は上のグラフと連動します。</span></div></section>
     </section>
     <footer><span>stockfolio <span class="muted">/</span> あなたの資産を、あなたの端末に。</span><span>株価：Yahoo Finance · 時価は直近取得価格 / 推移は確定終値</span></footer>
   </main>
@@ -55,5 +55,5 @@
 <dialog id="dataMenuDialog"><div class="dialog-heading"><h2>データ管理</h2><button class="icon-button" data-close aria-label="閉じる">×</button></div><p>保有情報はこの端末だけに保存されます。ファイルに書き出して、ほかの端末へ引き継げます。</p><button class="button secondary full" id="mobileBackup">↓ JSONバックアップを書き出す</button><button class="button secondary full" id="csvBackupButton">↓ CSVバックアップを書き出す</button><button class="button secondary full" id="mobileImport">↑ バックアップを読み込む（CSV / JSON）</button><p class="small-note">CSV列：portfolio（ポートフォリオ名）、symbol（証券コード）、name（銘柄名）、quantity（株数）、cost（1株当たり取得単価・円）。</p></dialog>
 <input type="file" id="importFile" accept="application/json,text/csv,.json,.csv" hidden>
 <div id="toast" class="toast hidden" role="status"></div>
-<script type="module" src="app.js?v=stock-gain-history-1"></script>
+<script type="module" src="app.js?v=gain-colors-1"></script>
 </body></html>

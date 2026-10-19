@@ -106,9 +106,9 @@ function render() {
   renderTrend(); renderWaterfall(); renderTable();
 }
 function renderTrend() {
-  const { daily, peak } = result;
+  const { daily, peak, trough } = result;
   $('trendDates').textContent = daily.length ? `${dateJP(daily[0].date)} — ${dateJP(daily.at(-1).date)} · ${daily.length}営業日 · 確定終値` : '終値ベース・株式分割調整済み';
-  $('peakLine').innerHTML = peak ? `<span>期間内の最高評価額 <strong>${yen(peak.value)}</strong> ${dateJP(peak.date)}</span><span>直近終値の最高額比 <strong>${pct((daily.at(-1).value / peak.value - 1) * 100)}</strong></span>` : '';
+  $('peakLine').innerHTML = peak ? `<span>期間内の最高評価額 <strong>${yen(peak.value)}</strong> ${dateJP(peak.date)}</span><span>期間内の最低評価額 <strong>${yen(trough.value)}</strong> ${dateJP(trough.date)}</span><span>直近終値の最高額比 <strong>${pct((daily.at(-1).value / peak.value - 1) * 100)}</strong></span>` : '';
   if (!daily.length) { $('trendChart').innerHTML = '<div class="empty-chart">銘柄を登録すると評価額の推移が表示されます</div>'; return; }
   const W = Math.max(300, $('trendChart').clientWidth), H = $('trendChart').clientHeight || 270, left = 55, right = 18, top = 22, bottom = 32;
   const values = daily.map(d => d.value), min = Math.min(...values), max = Math.max(...values);
@@ -119,8 +119,8 @@ function renderTrend() {
   const labelCount = Math.min(W < 500 ? 4 : 6, daily.length);
   const labelIndices = [...new Set(Array.from({ length: labelCount }, (_, i) => Math.round(i / Math.max(1, labelCount - 1) * (daily.length - 1))))];
   const labels = labelIndices.map(i => `<text x="${x(i)}" y="${H - 7}" text-anchor="middle" class="svg-label">${daily[i].date.slice(5).replace('-', '/')}</text>`).join('');
-  const pi = daily.findIndex(d => d === peak);
-  $('trendChart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="時価評価額の推移。期間最高${yen(peak.value)}、${dateJP(peak.date)}"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#a1c9ab" stop-opacity=".35"/><stop offset="1" stop-color="#d8e9d4" stop-opacity=".05"/></linearGradient></defs>${grid}<path d="${path} L${x(daily.length - 1)},${H - bottom} L${left},${H - bottom} Z" fill="url(#area)"/><path d="${path}" fill="none" stroke="#458363" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${x(pi)}" cy="${y(peak.value)}" r="4" fill="#fff" stroke="#458363" stroke-width="2"/>${labels}<line id="hoverLine" x1="0" x2="0" y1="${top}" y2="${H - bottom}" stroke="#91af99" stroke-dasharray="4 4" opacity="0"/><circle id="hoverDot" r="4" fill="#235c43" opacity="0"/><rect id="hoverArea" x="${left}" y="0" width="${W - left - right}" height="${H}" fill="transparent"/></svg><div id="chartTooltip" class="tooltip hidden"></div>`;
+  const pi = daily.findIndex(d => d === peak), ti = daily.findIndex(d => d === trough);
+  $('trendChart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="時価評価額の推移。期間最高${yen(peak.value)}、${dateJP(peak.date)}。期間最低${yen(trough.value)}、${dateJP(trough.date)}"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#a1c9ab" stop-opacity=".35"/><stop offset="1" stop-color="#d8e9d4" stop-opacity=".05"/></linearGradient></defs>${grid}<path d="${path} L${x(daily.length - 1)},${H - bottom} L${left},${H - bottom} Z" fill="url(#area)"/><path d="${path}" fill="none" stroke="#458363" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${x(pi)}" cy="${y(peak.value)}" r="4" fill="#fff" stroke="#458363" stroke-width="2"/><circle cx="${x(ti)}" cy="${y(trough.value)}" r="4" fill="#fff" stroke="#bd5e50" stroke-width="2"/>${labels}<line id="hoverLine" x1="0" x2="0" y1="${top}" y2="${H - bottom}" stroke="#91af99" stroke-dasharray="4 4" opacity="0"/><circle id="hoverDot" r="4" fill="#235c43" opacity="0"/><rect id="hoverArea" x="${left}" y="0" width="${W - left - right}" height="${H}" fill="transparent"/></svg><div id="chartTooltip" class="tooltip hidden"></div>`;
   const area = $('hoverArea'), tip = $('chartTooltip');
   area.addEventListener('pointermove', e => {
     const rect = area.ownerSVGElement.getBoundingClientRect(), px = (e.clientX - rect.left) / rect.width * W;

@@ -85,3 +85,11 @@ test('mixed quote days and incomplete live prices do not produce daily-change to
   delete mixed['7011.T'].live;
   assert.equal(analyze(hs,mixed).dayChange,null);
 });
+
+test('period minimum uses closing history within the selected range', () => {
+  const q = Object.fromEntries(hs.map(h=>[h.symbol,{prices:[['2026-01-05',50],['2026-09-01',100],['2026-10-16',80]],live:{price:1,at:'2026-10-19T14:00:00+09:00'}}]));
+  assert.deepEqual(analyze(hs,q).trough,{date:'2026-01-05',value:200000});
+  assert.deepEqual(analyze(hs,q,{start:'2026-09-01'}).trough,{date:'2026-10-16',value:320000});
+  assert.equal(analyze(hs,q,{start:'2027-01-01'}).trough,null);
+  assert.equal(analyze([],q).trough,null);
+});

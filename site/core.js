@@ -30,7 +30,7 @@ export function validateBackup(raw) {
 // Use only common trading dates. Mixing stale and current prices understates risk.
 export function analyze(holdings, quotes, { start = '', end = '9999-12-31' } = {}) {
   const unavailable = holdings.filter(h => !quotes?.[h.symbol]?.prices?.length).map(h => h.symbol);
-  if (!holdings.length || unavailable.length) return { rows: [], daily: [], unavailable, peak: null, latest: null };
+  if (!holdings.length || unavailable.length) return { rows: [], daily: [], unavailable, peak: null, trough: null, latest: null };
   const maps = holdings.map(h => new Map(quotes[h.symbol].prices));
   const dates = [...maps[0].keys()].filter(d => d <= end && maps.every(m => Number.isFinite(m.get(d)) && m.get(d) > 0)).sort();
   const basis = holdings.reduce((a, h) => a + h.quantity * h.cost, 0);
@@ -56,6 +56,7 @@ export function analyze(holdings, quotes, { start = '', end = '9999-12-31' } = {
   const latest = rows.length ? { date: liveCount ? quoteTimes.at(-1).slice(0,10) : latestDate, value: rows.reduce((v, h) => v + h.value, 0), basis, gain: rows.reduce((v, h) => v + h.gain, 0),
     source: liveCount ? (liveCount === rows.length ? 'latest' : 'mixed') : 'close', oldestAt:quoteTimes[0], newestAt:quoteTimes.at(-1) } : null;
   const peak = daily.reduce((a, d) => !a || d.value > a.value ? d : a, null);
+  const trough = daily.reduce((a, d) => !a || d.value < a.value ? d : a, null);
   const lastDates = holdings.map(h => quotes[h.symbol].prices.at(-1)?.[0]).filter(Boolean);
   let previous = allDaily.at(-2) || null;
   let bases = previous ? maps.map(m => m.get(previous.date)) : [];
@@ -75,7 +76,7 @@ export function analyze(holdings, quotes, { start = '', end = '9999-12-31' } = {
   const movement = changeRows.reduce((v,r) => v + Math.abs(r.change), 0);
   const dayChange = previous ? {value:changeRows.reduce((v,r)=>v+r.change,0), pct:previous.value ? (latest.value/previous.value-1)*100 : null,
     rows:changeRows.map(r => ({...r, share:movement ? Math.abs(r.change)/movement*100 : 0}))} : null;
-  return { dayChange, rows, daily, unavailable, peak, latest, historyDate:latestDate, historicalRows, liveCount, latestMismatch: lastDates.some(d => d !== latestDate), coverageStart: dates[0], previous };
+  return { dayChange, rows, daily, unavailable, peak, trough, latest, historyDate:latestDate, historicalRows, liveCount, latestMismatch: lastDates.some(d => d !== latestDate), coverageStart: dates[0], previous };
 }
 export function rangeStart(period, asOf) {
   if (!asOf) return '';

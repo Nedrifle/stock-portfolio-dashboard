@@ -59,22 +59,19 @@ jobs:
           REQUESTED_SYMBOLS: ${{ inputs.symbols || '' }}
         run: python3 scripts/update_prices.py --mode '${{ steps.plan.outputs.mode }}'
       - name: 公開株価キャッシュと取得対象コードだけを保存
+        id: cache
         if: steps.plan.outputs.run == 'true'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add site/data/quotes.json market-symbols.json
-          if ! git diff --cached --quiet; then
-            git commit -m 'Update public daily closing prices'
-            git push origin HEAD:main
-          fi
+          bash scripts/save_prices.sh
       - uses: actions/configure-pages@v5
-        if: steps.plan.outputs.run == 'true'
+        if: steps.plan.outputs.run == 'true' && steps.cache.outputs.stale != 'true'
       - uses: actions/upload-pages-artifact@v3
-        if: steps.plan.outputs.run == 'true'
+        if: steps.plan.outputs.run == 'true' && steps.cache.outputs.stale != 'true'
         with:
           path: site
       - name: GitHub Pagesに公開
-        if: steps.plan.outputs.run == 'true'
+        if: steps.plan.outputs.run == 'true' && steps.cache.outputs.stale != 'true'
         id: deployment
         uses: actions/deploy-pages@v4

@@ -1,4 +1,4 @@
-import { SCHEMA, holdingOf, symbolOf, validateBackup, analyze, rangeStart, waterfall, exportCSV, importCSV } from './core.js';
+import { SCHEMA, holdingOf, symbolOf, validateBackup, analyze, rangeStart, waterfall, exportCSV, importCSV } from './core.js?v=period-minimum-1';
 const $ = id => document.getElementById(id);
 const KEY = 'stockfolio.v1', CONFIG = 'stockfolio.settings.v1';
 const yen = n => Number.isFinite(n) ? `¥${Math.round(n).toLocaleString('ja-JP')}` : '—';

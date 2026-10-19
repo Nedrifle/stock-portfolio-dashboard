@@ -74,11 +74,11 @@ function render() {
   $('totalValue').textContent = valueVisible ? (l ? yen(l.value) : '—') : '××円';
   $('toggleValueButton').textContent = valueVisible ? '非表示' : '表示';
   $('toggleValueButton').setAttribute('aria-pressed', String(valueVisible));
-  $('toggleValueButton').setAttribute('aria-label', valueVisible ? '時価評価額を非表示' : '時価評価額を表示');
-  $('totalCost').textContent = hs.length ? yen(hs.reduce((v, h) => v + h.quantity * h.cost, 0)) : '—';
-  $('totalGain').textContent = l ? signed(l.gain) : '—';
-  $('totalGain').className = `metric-value ${l ? classOf(l.gain) : ''}`;
-  $('gainRate').textContent = l ? `損益率 ${l.basis ? pct(l.gain / l.basis * 100) : '—（取得価額0円）'}` : '取得価額との比較';
+  $('toggleValueButton').setAttribute('aria-label', valueVisible ? '概要の金額を非表示' : '概要の金額を表示');
+  $('totalCost').textContent = !valueVisible ? '××円' : hs.length ? yen(hs.reduce((v, h) => v + h.quantity * h.cost, 0)) : '—';
+  $('totalGain').textContent = !valueVisible ? '××円' : l ? signed(l.gain) : '—';
+  $('totalGain').className = `metric-value ${valueVisible && l ? classOf(l.gain) : ''}`;
+  $('gainRate').textContent = !valueVisible ? '損益率 ××%' : l ? `損益率 ${l.basis ? pct(l.gain / l.basis * 100) : '—（取得価額0円）'}` : '取得価額との比較';
   $('dayChange').textContent = !valueVisible ? '表示ボタンで金額を確認できます' : l && result.previous ? `前営業日比 ${signed(l.value - result.previous.value)}（${pct((l.value / result.previous.value - 1) * 100)}）` : '直近の終値で評価';
   $('quoteStatus').textContent = l ? `${valuationLabel(l)} · サイト更新 ${timeJP(quoteData.generatedAt)}` : hs.length ? '未取得の銘柄があります' : quoteData.generatedAt ? `サイト更新 ${timeJP(quoteData.generatedAt)}` : '銘柄を登録してください';
   let message = '', warn = false;

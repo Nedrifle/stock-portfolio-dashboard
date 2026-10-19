@@ -5,7 +5,7 @@
   <meta name="theme-color" content="#123d36">
   <meta name="description" content="保有株の価値を日々の終値で。株式ポートフォリオの推移・損益・銘柄別内訳を端末内で管理。">
   <title>株式ポートフォリオ | Stockfolio</title>
-  <link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css?v=horizontal-waterfall-1">
+  <link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css?v=unified-summary-1">
 </head>
 <body>
 <aside class="sidebar">
@@ -23,9 +23,12 @@
     <section class="portfolio-toolbar"><div class="portfolio-controls"><label for="portfolioSelect">ポートフォリオ</label><select id="portfolioSelect"></select><button id="addPortfolio" class="text-button">＋ 新規</button><button id="renamePortfolio" class="text-button">名前を変更</button></div><div id="quoteStatus" class="quote-status" role="status">株価データを確認中…</div></section>
     <div id="notice" class="notice hidden" role="status"></div>
     <section class="summary-grid" aria-label="ポートフォリオ概要">
-      <article class="metric featured"><div class="metric-label">時価評価額 <span>JPY</span></div><div class="value-visibility-row"><div id="totalValue" class="metric-value" aria-live="polite">××円</div><button id="toggleValueButton" class="value-visibility-button" type="button" aria-controls="totalValue dayChange" aria-pressed="false" aria-label="時価評価額を表示">表示</button></div><div id="dayChange" class="metric-foot">表示ボタンで金額を確認できます</div><svg class="metric-art" viewBox="0 0 120 60" aria-hidden="true"><path d="M0 58L20 41L38 45L58 25L76 31L96 9L120 0"/></svg></article>
-      <article class="metric"><div class="metric-label">含み損益 <span>未実現</span></div><div id="totalGain" class="metric-value">—</div><div id="gainRate" class="metric-foot">取得価額との比較</div></article>
-      <article class="metric"><div class="metric-label">取得価額合計 <span id="holdingCount">0銘柄</span></div><div id="totalCost" class="metric-value">—</div><div class="metric-foot">保有株数 × 1株当たり取得単価</div></article>
+      <article class="metric featured unified-summary">
+        <div class="summary-card-header"><span>ポートフォリオ概要 <span id="holdingCount">0銘柄</span></span><button id="toggleValueButton" class="value-visibility-button" type="button" aria-controls="totalValue totalCost totalGain dayChange gainRate" aria-pressed="false" aria-label="概要の金額を表示">表示</button></div>
+        <div class="summary-item summary-market"><div class="metric-label">時価評価額 <span>JPY</span></div><div id="totalValue" class="metric-value" aria-live="polite">××円</div><div id="dayChange" class="metric-foot">表示ボタンで金額を確認できます</div></div>
+        <div class="summary-item"><div class="metric-label">取得価額</div><div id="totalCost" class="metric-value">××円</div><div class="metric-foot">保有株数 × 1株当たり取得単価</div></div>
+        <div class="summary-item"><div class="metric-label">含み損益 <span>未実現</span></div><div id="totalGain" class="metric-value">××円</div><div id="gainRate" class="metric-foot">損益率 ××%</div></div>
+      </article>
     </section>
     <section class="panel trend-panel"><div class="panel-heading"><div><div class="eyebrow">PORTFOLIO VALUE</div><h2>時価評価額の推移</h2><p id="trendDates">終値ベース・株式分割調整済み</p></div><div class="periods" role="group" aria-label="表示期間"><button data-period="1">1か月</button><button data-period="3">3か月</button><button data-period="6">6か月</button><button data-period="ytd" class="selected">年初来</button><button data-period="all">全期間</button></div></div>
       <div id="peakLine" class="peak-line"></div><div class="trend-chart" id="trendChart"></div><div class="chart-caption"><span><i class="legend-dot"></i> ポートフォリオ全体</span><span>現在の保有株数を全期間保有した場合の推移（配当・現金・売買を除く）</span></div>
@@ -44,5 +47,5 @@
 <dialog id="dataMenuDialog"><div class="dialog-heading"><h2>データ管理</h2><button class="icon-button" data-close aria-label="閉じる">×</button></div><p>保有情報はこの端末だけに保存されます。ファイルに書き出して、ほかの端末へ引き継げます。</p><button class="button secondary full" id="mobileBackup">↓ JSONバックアップを書き出す</button><button class="button secondary full" id="csvBackupButton">↓ CSVバックアップを書き出す</button><button class="button secondary full" id="mobileImport">↑ バックアップを読み込む（CSV / JSON）</button><p class="small-note">CSV列：portfolio（ポートフォリオ名）、symbol（証券コード）、name（銘柄名）、quantity（株数）、cost（1株当たり取得単価・円）。</p></dialog>
 <input type="file" id="importFile" accept="application/json,text/csv,.json,.csv" hidden>
 <div id="toast" class="toast hidden" role="status"></div>
-<script type="module" src="app.js?v=horizontal-waterfall-1"></script>
+<script type="module" src="app.js?v=unified-summary-1"></script>
 </body></html>

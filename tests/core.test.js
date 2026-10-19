@@ -64,3 +64,24 @@ test('quotes older than the completed history are not used for live valuation', 
   const r = analyze(hs,{...quotes,'5801.T':{...quotes['5801.T'],live:{price:1,at:'2026-10-15T14:00:00+09:00'}}});
   assert.equal(r.latest.source,'close'); assert.equal(r.latest.value,14324000);
 });
+test('daily changes reconcile to the total and absolute contribution shares', () => {
+  const q = {'5801.T':{...quotes['5801.T'],live:{price:3400,at:'2026-10-19T14:00:00+09:00',previousClose:3366}},'7011.T':{...quotes['7011.T'],live:{price:3780,at:'2026-10-19T14:01:00+09:00',previousClose:3796}}};
+  const r = analyze(hs,q);
+  assert.deepEqual(r.dayChange.rows.map(r=>r.change),[68000,-32000]);
+  assert.equal(r.dayChange.value,36000);
+  assert.deepEqual(r.dayChange.rows.map(r=>r.share),[68,32]);
+  assert.equal(waterfall(r.dayChange.rows.map(r=>({...r,gain:r.change}))).at(-1).end,36000);
+});
+test('closing daily changes use the prior common trading day; zero movement has zero shares', () => {
+  const r = analyze(hs,quotes);
+  assert.equal(r.dayChange.value,14324000-19418000);
+  const flat = Object.fromEntries(hs.map(h=>[h.symbol,{prices:[['2026-10-15',100],['2026-10-16',100]]}]));
+  assert.equal(analyze(hs,flat).dayChange.value,0);
+  assert.deepEqual(analyze(hs,flat).dayChange.rows.map(r=>r.share),[0,0]);
+});
+test('mixed quote days and incomplete live prices do not produce daily-change totals', () => {
+  const mixed = {'5801.T':{...quotes['5801.T'],live:{price:3400,at:'2026-10-19T14:00:00+09:00',previousClose:3366}},'7011.T':{...quotes['7011.T'],live:{price:3780,at:'2026-10-16T15:30:00+09:00',previousClose:3700}}};
+  assert.equal(analyze(hs,mixed).dayChange,null);
+  delete mixed['7011.T'].live;
+  assert.equal(analyze(hs,mixed).dayChange,null);
+});

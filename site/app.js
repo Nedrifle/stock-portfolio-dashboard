@@ -134,21 +134,33 @@ function renderTrend() {
   area.addEventListener('pointerleave', () => { tip.classList.add('hidden'); $('hoverLine').setAttribute('opacity', 0); $('hoverDot').setAttribute('opacity', 0); });
 }
 function renderWaterfall() {
+  renderDailyChange();
+  drawWaterfall('waterfallChart', result.rows, result.latest?.gain, '含み損益内訳');
   $('breakdownDate').textContent = result.latest ? `${valuationLabel(result.latest)} · 取得価額との差額` : '銘柄ごとの貢献をウォーターフォールで表示';
-  if (!result.rows.length) { $('waterfallChart').innerHTML = '<div class="empty-chart" style="height:220px">銘柄ごとの利益・損失がここに表示されます</div>'; return; }
-  const bars = waterfall(result.rows), total = result.latest.gain, W = Math.max($('waterfallChart').clientWidth, bars.length * 65 + 130), H = 240, left = 65, top = 27, bottom = 48;
+}
+function renderDailyChange() {
+  const change = result.dayChange;
+  $('dailyChangeTotal').textContent = change ? signed(change.value) : '—';
+  $('dailyChangeTotal').className = change ? classOf(change.value) : '';
+  $('dailyChangeRate').textContent = change ? pct(change.pct) : '';
+  $('dailyChangeDate').textContent = change ? `${valuationLabel(result.latest)} · 前営業日終値比` : '比較できる前営業日の終値がそろうと表示します';
+  drawWaterfall('dailyChangeChart', change?.rows.map(r => ({...r, gain:r.change})) || [], change?.value, '前日比増減の内訳', true);
+}
+function drawWaterfall(target, rows, total, title, daily = false) {
+  if (!rows.length) { $(target).innerHTML = '<div class="empty-chart" style="height:220px">比較に必要な株価がそろうと内訳を表示します</div>'; return; }
+  const bars = waterfall(rows), W = Math.max($(target).clientWidth, bars.length * (daily ? 100 : 65) + 130), H = daily ? 260 : 240, left = 65, top = 27, bottom = daily ? 65 : 48;
   const stops = [0, total, ...bars.flatMap(b => [b.start, b.end])], lo = Math.min(...stops), hi = Math.max(...stops), pad = (hi - lo) * .15 || 1000;
   const y = v => top + (hi + pad - v) / (hi - lo + 2 * pad) * (H - top - bottom), width = (W - left - 15) / (bars.length + 1), bw = width * .6;
   const label = n => `${n < 0 ? '−' : ''}${number(Math.round(Math.abs(n) / 10000))}万`;
-  let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:${W}px" role="img" aria-label="含み損益内訳。合計${signed(total)}"><line x1="${left}" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="#dbe4d7"/>`;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:${W}px" role="img" aria-label="${title}。合計${signed(total)}"><line x1="${left}" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="#dbe4d7"/>`;
   for (let i = 0; i < 4; i++) { const v = lo + i / 3 * (hi - lo); svg += `<text x="${left - 10}" y="${y(v) + 3}" text-anchor="end" class="svg-label">${label(v)}</text>`; }
   bars.forEach((b, i) => {
     const xx = left + width * i + width * .2, yy = y(Math.max(b.start, b.end)), height = Math.max(1, Math.abs(y(b.start) - y(b.end)));
-    svg += `<g><title>${escape(b.name)}：${signed(b.gain)}</title><rect x="${xx}" y="${yy}" width="${bw}" height="${height}" rx="2" fill="${b.gain >= 0 ? '#518b6e' : '#ca8070'}"/><text x="${xx + bw / 2}" y="${b.gain >= 0 ? yy - 7 : yy + height + 13}" class="svg-small" text-anchor="middle">${label(b.gain)}</text><text x="${xx + bw / 2}" y="${H - 22}" class="svg-small" text-anchor="middle">${escape(b.symbol.replace('.T', ''))}</text><text x="${xx + bw / 2}" y="${H - 8}" class="svg-small" text-anchor="middle">${escape(b.name.slice(0, 5))}</text>${i < bars.length - 1 ? `<line x1="${xx + bw}" x2="${xx + width}" y1="${y(b.end)}" y2="${y(b.end)}" stroke="#c9d7c9" stroke-dasharray="2 2"/>` : ''}</g>`;
+    svg += `<g><title>${escape(b.name)}：${signed(b.gain)}${daily ? `（構成比 ${b.share.toFixed(1)}%）` : ''}</title><rect x="${xx}" y="${yy}" width="${bw}" height="${height}" rx="2" fill="${b.gain >= 0 ? '#518b6e' : '#ca8070'}"/><text x="${xx + bw / 2}" y="${b.gain >= 0 ? yy - 7 : yy + height + 13}" class="svg-small" text-anchor="middle">${daily ? signed(b.gain) : label(b.gain)}</text><text x="${xx + bw / 2}" y="${H - (daily ? 38 : 22)}" class="svg-small" text-anchor="middle">${escape(b.symbol.replace('.T', ''))}</text><text x="${xx + bw / 2}" y="${H - (daily ? 24 : 8)}" class="svg-small" text-anchor="middle">${escape(b.name.slice(0, 5))}</text>${daily ? `<text x="${xx + bw / 2}" y="${H - 8}" class="svg-small" text-anchor="middle">${b.share.toFixed(1)}%</text>` : ''}${i < bars.length - 1 ? `<line x1="${xx + bw}" x2="${xx + width}" y1="${y(b.end)}" y2="${y(b.end)}" stroke="#c9d7c9" stroke-dasharray="2 2"/>` : ''}</g>`;
   });
   const tx = left + width * bars.length + width * .2, ty = y(Math.max(0, total));
-  svg += `<rect x="${tx}" y="${ty}" width="${bw}" height="${Math.max(1, Math.abs(y(total) - y(0)))}" fill="#254940" rx="2"/><text x="${tx + bw / 2}" y="${ty - 8}" class="svg-small" text-anchor="middle">${label(total)}</text><text x="${tx + bw / 2}" y="${H - 18}" class="svg-small" text-anchor="middle">合計</text></svg>`;
-  $('waterfallChart').innerHTML = svg;
+  svg += `<rect x="${tx}" y="${ty}" width="${bw}" height="${Math.max(1, Math.abs(y(total) - y(0)))}" fill="#254940" rx="2"/><text x="${tx + bw / 2}" y="${ty - 8}" class="svg-small" text-anchor="middle">${daily ? signed(total) : label(total)}</text><text x="${tx + bw / 2}" y="${H - 18}" class="svg-small" text-anchor="middle">合計</text></svg>`;
+  $(target).innerHTML = svg;
 }
 function renderTable() {
   const hs = holdings(), query = $('searchInput').value.trim().toLowerCase(), bySymbol = new Map(result.rows.map(r => [r.symbol, r]));

@@ -58,16 +58,24 @@ export function analyze(holdings, quotes, { start = '', end = '9999-12-31' } = {
   const peak = daily.reduce((a, d) => !a || d.value > a.value ? d : a, null);
   const lastDates = holdings.map(h => quotes[h.symbol].prices.at(-1)?.[0]).filter(Boolean);
   let previous = allDaily.at(-2) || null;
+  let bases = previous ? maps.map(m => m.get(previous.date)) : [];
+  let comparisonDate = previous?.date;
   if (liveCount) {
-    const bases = rows.map((r,i) => {
+    bases = rows.map((r,i) => {
       if (r.priceKind !== 'latest') return null;
       const l = quotes[r.symbol].live;
       if (Number.isFinite(l.previousClose) && l.previousClose > 0) return l.previousClose;
       return [...maps[i]].filter(([d]) => d < l.at.slice(0,10)).at(-1)?.[1] ?? null;
     });
-    previous = bases.every(Number.isFinite) ? {value:holdings.reduce((v,h,i)=>v+h.quantity*bases[i],0)} : null;
+    comparisonDate = rows[0]?.priceAt?.slice(0,10);
+    const sameDay = rows.every(r => r.priceAt?.slice(0,10) === comparisonDate);
+    previous = sameDay && bases.every(Number.isFinite) ? {value:holdings.reduce((v,h,i)=>v+h.quantity*bases[i],0)} : null;
   }
-  return { rows, daily, unavailable, peak, latest, historyDate:latestDate, historicalRows, liveCount, latestMismatch: lastDates.some(d => d !== latestDate), coverageStart: dates[0], previous };
+  const changeRows = previous ? rows.map((r,i) => ({...r, previousClose:bases[i], change:(r.close-bases[i])*r.quantity})) : [];
+  const movement = changeRows.reduce((v,r) => v + Math.abs(r.change), 0);
+  const dayChange = previous ? {value:changeRows.reduce((v,r)=>v+r.change,0), pct:previous.value ? (latest.value/previous.value-1)*100 : null,
+    rows:changeRows.map(r => ({...r, share:movement ? Math.abs(r.change)/movement*100 : 0}))} : null;
+  return { dayChange, rows, daily, unavailable, peak, latest, historyDate:latestDate, historicalRows, liveCount, latestMismatch: lastDates.some(d => d !== latestDate), coverageStart: dates[0], previous };
 }
 export function rangeStart(period, asOf) {
   if (!asOf) return '';

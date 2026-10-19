@@ -5,7 +5,7 @@
   <meta name="theme-color" content="#123d36">
   <meta name="description" content="保有株の価値を日々の終値で。株式ポートフォリオの推移・損益・銘柄別内訳を端末内で管理。">
   <title>株式ポートフォリオ | Stockfolio</title>
-  <link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css?v=summary-amount-size-1">
+  <link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css?v=stock-value-tab-1">
 </head>
 <body>
 <aside class="sidebar">
@@ -22,6 +22,8 @@
     <section class="page-heading"><div><div class="eyebrow">YOUR INVESTMENTS, IN VIEW</div><h1>株式ポートフォリオ</h1><p>日々の価値の変化を、ひと目で。</p></div><div class="heading-actions"><button id="refreshButton" class="button secondary"><span>↻</span> 最新データを読み込む</button><button id="addButton" class="button primary">＋ 銘柄を登録</button></div></section>
     <section class="portfolio-toolbar"><div class="portfolio-controls"><label for="portfolioSelect">ポートフォリオ</label><select id="portfolioSelect"></select><button id="addPortfolio" class="text-button">＋ 新規</button><button id="renamePortfolio" class="text-button">名前を変更</button></div><div id="quoteStatus" class="quote-status" role="status">株価データを確認中…</div></section>
     <div id="notice" class="notice hidden" role="status"></div>
+    <div class="view-tabs" role="tablist" aria-label="表示内容"><button id="overviewTab" role="tab" aria-selected="true" aria-controls="overviewPanel">ポートフォリオ全体</button><button id="stockValueTab" role="tab" aria-selected="false" aria-controls="stockValuePanel" tabindex="-1">銘柄別時価評価額</button></div>
+    <div id="overviewPanel" role="tabpanel" aria-labelledby="overviewTab">
     <section class="summary-grid" aria-label="ポートフォリオ概要">
       <article class="metric featured unified-summary">
         <div class="summary-card-header"><span>ポートフォリオ概要 <span id="holdingCount">0銘柄</span></span><button id="toggleValueButton" class="value-visibility-button" type="button" aria-controls="totalValue totalCost totalGain dayChange gainRate" aria-pressed="false" aria-label="概要の金額を表示">表示</button></div>
@@ -36,6 +38,11 @@
     <section class="panel daily-change-panel" aria-labelledby="dailyChangeHeading"><div class="panel-heading"><div><div class="eyebrow">DAILY CHANGE</div><h2 id="dailyChangeHeading">前日比の増減</h2><p id="dailyChangeDate">前営業日の終値との差額</p></div><div class="daily-change-total"><span>増減額合計</span><strong id="dailyChangeTotal">—</strong><span id="dailyChangeRate">—</span></div></div><div class="chart-key"><span><i class="legend-dot"></i> 増加</span><span><i class="legend-dot loss-dot"></i> 減少</span></div><div class="waterfall-shell" id="dailyChangeChart"></div><p class="small-note">（株価 − 前営業日終値）× 保有株数で集計。増減額の絶対値が大きい順に表示し、増加は右、減少は左に伸びます。構成比は各銘柄の増減額の絶対値を、全銘柄の絶対値合計で割った割合です。銘柄が多い場合はグラフ内を縦にスクロールできます。</p></section>
     <section class="panel breakdown-panel"><div class="panel-heading"><div><div class="eyebrow">PROFIT & LOSS</div><h2>直近の含み損益の内訳</h2><p id="breakdownDate">銘柄ごとの貢献をウォーターフォールで表示</p></div><div class="chart-key"><span><i class="legend-dot"></i> 利益</span><span><i class="legend-dot loss-dot"></i> 損失</span><span><i class="legend-dot total-dot"></i> 合計</span></div></div><div class="waterfall-shell" id="waterfallChart"></div><p class="small-note">利益・損失を順に積み上げ、最下段に損益合計を表示します。銘柄が多い場合はグラフ内を縦にスクロールできます。</p></section>
     <section class="panel" id="holdings"><div class="panel-heading"><div><div class="eyebrow">HOLDINGS</div><h2>保有銘柄 <span id="tableCount" class="count-pill">0</span></h2></div><label class="search-box"><span>⌕</span><input id="searchInput" placeholder="銘柄名・コードで検索" aria-label="銘柄名・コードで検索"></label></div><div class="table-shell"><table><thead><tr><th>銘柄</th><th>保有株数</th><th>取得単価</th><th>取得価額</th><th>株価・価格時刻</th><th><button data-sort="value">時価評価額 ↕</button></th><th><button data-sort="gain">含み損益 ↕</button></th><th>操作</th></tr></thead><tbody id="holdingsBody"></tbody><tfoot id="holdingsFoot"></tfoot></table></div><div id="emptyState" class="empty-state hidden"><div class="empty-icon">▥</div><h3>最初の銘柄を登録しましょう</h3><p>証券コード、現在の保有株数、取得単価を入力すると<br>評価額と損益を自動で集計します。</p><button class="button primary" id="emptyAdd">＋ 銘柄を登録</button><button class="text-button" id="sampleButton">サンプルで試す →</button></div></section>
+    </div>
+    <section id="stockValuePanel" role="tabpanel" aria-labelledby="stockValueTab" class="hidden">
+      <div class="panel"><div class="eyebrow">STOCK VALUE</div><h2>銘柄別時価評価額</h2><div class="stock-selector"><label for="stockValueSelect">表示する銘柄</label><select id="stockValueSelect"></select></div><p id="stockValueInfo" class="small-note"></p></div>
+      <section class="panel trend-panel"><div class="panel-heading"><div><h2 id="stockTrendTitle">時価評価額の推移</h2><p id="stockTrendDates">銘柄を選択してください</p></div><div class="periods" role="group" aria-label="銘柄別の表示期間"><button data-stock-period="1">1か月</button><button data-stock-period="3">3か月</button><button data-stock-period="6">6か月</button><button data-stock-period="ytd" class="selected">年初来</button><button data-stock-period="all">全期間</button></div></div><div id="stockPeakLine" class="peak-line"></div><div id="stockTrendChart" class="trend-chart"></div><div class="chart-caption"><span>選択銘柄の時価評価額</span><span>現在の保有株数 × 分割調整済み終値。現在株数を全期間保有した場合の推移です。</span></div></section>
+    </section>
     <footer><span>stockfolio <span class="muted">/</span> あなたの資産を、あなたの端末に。</span><span>株価：Yahoo Finance · 時価は直近取得価格 / 推移は確定終値</span></footer>
   </main>
 </div>
@@ -47,5 +54,5 @@
 <dialog id="dataMenuDialog"><div class="dialog-heading"><h2>データ管理</h2><button class="icon-button" data-close aria-label="閉じる">×</button></div><p>保有情報はこの端末だけに保存されます。ファイルに書き出して、ほかの端末へ引き継げます。</p><button class="button secondary full" id="mobileBackup">↓ JSONバックアップを書き出す</button><button class="button secondary full" id="csvBackupButton">↓ CSVバックアップを書き出す</button><button class="button secondary full" id="mobileImport">↑ バックアップを読み込む（CSV / JSON）</button><p class="small-note">CSV列：portfolio（ポートフォリオ名）、symbol（証券コード）、name（銘柄名）、quantity（株数）、cost（1株当たり取得単価・円）。</p></dialog>
 <input type="file" id="importFile" accept="application/json,text/csv,.json,.csv" hidden>
 <div id="toast" class="toast hidden" role="status"></div>
-<script type="module" src="app.js?v=period-minimum-1"></script>
+<script type="module" src="app.js?v=stock-value-tab-1"></script>
 </body></html>

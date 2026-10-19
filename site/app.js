@@ -14,6 +14,7 @@ const freshState = () => { const id = crypto.randomUUID(); return { schema: SCHE
 let state, settings = {}, quoteData = { symbols: {} }, period = 'ytd', sort = 'value', sortDirection = -1, sample = false, result, toastTimer, rename = false, requestStarted = 0, busy = false, loadWarning = '';
 let memoryToken = '', workflowTimer;
 let valueVisible = false;
+let activeView = 'overview', stockSymbol = '', stockPeriod = 'ytd';
 try { state = localStorage.getItem(KEY) ? validateBackup(JSON.parse(localStorage.getItem(KEY))) : freshState(); }
 catch { state = freshState(); loadWarning = '保存データを読み込めませんでした。元のデータは上書きしていません。バックアップから復元してください。'; }
 try { settings = JSON.parse(localStorage.getItem(CONFIG) || '{}'); } catch { settings = {}; }
@@ -103,14 +104,17 @@ function render() {
   }
   if (loadWarning) { message = loadWarning; warn = true; }
   notice(message, warn);
-  renderTrend(); renderWaterfall(); renderTable();
+  renderTrend(); renderWaterfall(); renderTable(); renderStockValue();
 }
-function renderTrend() {
-  const { daily, peak, trough } = result;
-  $('trendDates').textContent = daily.length ? `${dateJP(daily[0].date)} — ${dateJP(daily.at(-1).date)} · ${daily.length}営業日 · 確定終値` : '終値ベース・株式分割調整済み';
-  $('peakLine').innerHTML = peak ? `<span>期間内の最高評価額 <strong>${yen(peak.value)}</strong> ${dateJP(peak.date)}</span><span>期間内の最低評価額 <strong>${yen(trough.value)}</strong> ${dateJP(trough.date)}</span><span>直近終値の最高額比 <strong>${pct((daily.at(-1).value / peak.value - 1) * 100)}</strong></span>` : '';
-  if (!daily.length) { $('trendChart').innerHTML = '<div class="empty-chart">銘柄を登録すると評価額の推移が表示されます</div>'; return; }
-  const W = Math.max(300, $('trendChart').clientWidth), H = $('trendChart').clientHeight || 270, left = 55, right = 18, top = 22, bottom = 32;
+function renderTrend() { drawTrend(result); }
+function drawTrend(analysis, prefix = '', label = '時価評価額の推移') {
+  const id = name => prefix ? prefix + name[0].toUpperCase() + name.slice(1) : name;
+  const chart = $(prefix ? 'stockTrendChart' : 'trendChart');
+  const { daily, peak, trough } = analysis;
+  $(prefix ? 'stockTrendDates' : 'trendDates').textContent = daily.length ? `${dateJP(daily[0].date)} — ${dateJP(daily.at(-1).date)} · ${daily.length}営業日 · 確定終値` : '終値ベース・株式分割調整済み';
+  $(prefix ? 'stockPeakLine' : 'peakLine').innerHTML = peak ? `<span>期間内の最高評価額 <strong>${yen(peak.value)}</strong> ${dateJP(peak.date)}</span><span>期間内の最低評価額 <strong>${yen(trough.value)}</strong> ${dateJP(trough.date)}</span><span>直近終値の最高額比 <strong>${pct((daily.at(-1).value / peak.value - 1) * 100)}</strong></span>` : '';
+  if (!daily.length) { chart.innerHTML = '<div class="empty-chart">銘柄を登録すると評価額の推移が表示されます</div>'; return; }
+  const W = Math.max(300, chart.clientWidth), H = chart.clientHeight || 270, left = 55, right = 18, top = 22, bottom = 32;
   const values = daily.map(d => d.value), min = Math.min(...values), max = Math.max(...values);
   const pad = (max - min) * .2 || Math.max(max * .1, 1000), low = Math.max(0, min - pad), high = max + pad;
   const x = i => left + i / Math.max(1, daily.length - 1) * (W - left - right), y = v => top + (high - v) / (high - low) * (H - top - bottom);
@@ -120,18 +124,18 @@ function renderTrend() {
   const labelIndices = [...new Set(Array.from({ length: labelCount }, (_, i) => Math.round(i / Math.max(1, labelCount - 1) * (daily.length - 1))))];
   const labels = labelIndices.map(i => `<text x="${x(i)}" y="${H - 7}" text-anchor="middle" class="svg-label">${daily[i].date.slice(5).replace('-', '/')}</text>`).join('');
   const pi = daily.findIndex(d => d === peak), ti = daily.findIndex(d => d === trough);
-  $('trendChart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="時価評価額の推移。期間最高${yen(peak.value)}、${dateJP(peak.date)}。期間最低${yen(trough.value)}、${dateJP(trough.date)}"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#a1c9ab" stop-opacity=".35"/><stop offset="1" stop-color="#d8e9d4" stop-opacity=".05"/></linearGradient></defs>${grid}<path d="${path} L${x(daily.length - 1)},${H - bottom} L${left},${H - bottom} Z" fill="url(#area)"/><path d="${path}" fill="none" stroke="#458363" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${x(pi)}" cy="${y(peak.value)}" r="4" fill="#fff" stroke="#458363" stroke-width="2"/><circle cx="${x(ti)}" cy="${y(trough.value)}" r="4" fill="#fff" stroke="#bd5e50" stroke-width="2"/>${labels}<line id="hoverLine" x1="0" x2="0" y1="${top}" y2="${H - bottom}" stroke="#91af99" stroke-dasharray="4 4" opacity="0"/><circle id="hoverDot" r="4" fill="#235c43" opacity="0"/><rect id="hoverArea" x="${left}" y="0" width="${W - left - right}" height="${H}" fill="transparent"/></svg><div id="chartTooltip" class="tooltip hidden"></div>`;
-  const area = $('hoverArea'), tip = $('chartTooltip');
+  chart.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${escape(label)}。期間最高${yen(peak.value)}、${dateJP(peak.date)}。期間最低${yen(trough.value)}、${dateJP(trough.date)}"><defs><linearGradient id="${id('area')}" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#a1c9ab" stop-opacity=".35"/><stop offset="1" stop-color="#d8e9d4" stop-opacity=".05"/></linearGradient></defs>${grid}<path d="${path} L${x(daily.length - 1)},${H - bottom} L${left},${H - bottom} Z" fill="url(#${id('area')})"/><path d="${path}" fill="none" stroke="#458363" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${x(pi)}" cy="${y(peak.value)}" r="4" fill="#fff" stroke="#458363" stroke-width="2"/><circle cx="${x(ti)}" cy="${y(trough.value)}" r="4" fill="#fff" stroke="#bd5e50" stroke-width="2"/>${labels}<line id="${id('hoverLine')}" x1="0" x2="0" y1="${top}" y2="${H - bottom}" stroke="#91af99" stroke-dasharray="4 4" opacity="0"/><circle id="${id('hoverDot')}" r="4" fill="#235c43" opacity="0"/><rect id="${id('hoverArea')}" x="${left}" y="0" width="${W - left - right}" height="${H}" fill="transparent"/></svg><div id="${id('chartTooltip')}" class="tooltip hidden"></div>`;
+  const area = $(id('hoverArea')), tip = $(id('chartTooltip'));
   area.addEventListener('pointermove', e => {
     const rect = area.ownerSVGElement.getBoundingClientRect(), px = (e.clientX - rect.left) / rect.width * W;
     const i = Math.max(0, Math.min(daily.length - 1, Math.round((px - left) / (W - left - right) * (daily.length - 1))));
     const d = daily[i];
-    $('hoverLine').setAttribute('x1', x(i)); $('hoverLine').setAttribute('x2', x(i)); $('hoverLine').setAttribute('opacity', 1);
-    $('hoverDot').setAttribute('cx', x(i)); $('hoverDot').setAttribute('cy', y(d.value)); $('hoverDot').setAttribute('opacity', 1);
+    $(id('hoverLine')).setAttribute('x1', x(i)); $(id('hoverLine')).setAttribute('x2', x(i)); $(id('hoverLine')).setAttribute('opacity', 1);
+    $(id('hoverDot')).setAttribute('cx', x(i)); $(id('hoverDot')).setAttribute('cy', y(d.value)); $(id('hoverDot')).setAttribute('opacity', 1);
     tip.innerHTML = `<small>${dateJP(d.date)} 終値</small><br><strong>${yen(d.value)}</strong>`;
     tip.classList.remove('hidden'); tip.style.left = `${Math.max(0, Math.min(rect.width - 170, e.clientX - rect.left + 12))}px`; tip.style.top = '0px';
   });
-  area.addEventListener('pointerleave', () => { tip.classList.add('hidden'); $('hoverLine').setAttribute('opacity', 0); $('hoverDot').setAttribute('opacity', 0); });
+  area.addEventListener('pointerleave', () => { tip.classList.add('hidden'); $(id('hoverLine')).setAttribute('opacity', 0); $(id('hoverDot')).setAttribute('opacity', 0); });
 }
 function renderWaterfall() {
   renderDailyChange();
@@ -298,8 +302,38 @@ $('dispatchButton').onclick = async () => {
     workflowTimer = setTimeout(poll, 15000);
   } catch (error) { $('settingsMessage').textContent = error.message; $('dispatchButton').disabled = false; }
 };
+
+function setView(view) {
+  activeView = view;
+  for (const [name, tab, panel] of [['overview','overviewTab','overviewPanel'],['stock','stockValueTab','stockValuePanel']]) {
+    const selected = name === view;
+    $(tab).setAttribute('aria-selected',String(selected)); $(tab).tabIndex = selected ? 0 : -1;
+    $(panel).classList.toggle('hidden',!selected);
+  }
+  if (view === 'stock') renderStockValue(); else { renderTrend(); renderWaterfall(); }
+}
+function renderStockValue() {
+  const hs = holdings(), quotes = quoteData.symbols || {};
+  if (!hs.some(h=>h.symbol === stockSymbol)) stockSymbol = hs[0]?.symbol || '';
+  $('stockValueSelect').innerHTML = hs.length ? hs.map(h=>`<option value="${escape(h.symbol)}">${escape(h.name || quotes[h.symbol]?.name || h.symbol)}（${escape(h.symbol)}）</option>`).join('') : '<option value="">登録銘柄がありません</option>';
+  $('stockValueSelect').value = stockSymbol; $('stockValueSelect').disabled = !hs.length;
+  const h = hs.find(h=>h.symbol === stockSymbol), name = h ? h.name || quotes[h.symbol]?.name || h.symbol : '';
+  $('stockTrendTitle').textContent = name ? `${name}の時価評価額の推移` : '時価評価額の推移';
+  const asOf = h ? quotes[h.symbol]?.prices?.at(-1)?.[0] : null;
+  const data = analyze(h ? [h] : [],quotes,{start:rangeStart(stockPeriod,asOf)});
+  $('stockValueInfo').textContent = h ? `${h.symbol} · 保有株数 ${number(h.quantity)}株${data.unavailable.length ? ' · 株価が未取得です。株価取得の設定から取得してください。' : ''}` : '銘柄を登録すると選択できます。';
+  if (activeView === 'stock') drawTrend(data,'stock',`${name}の時価評価額の推移`);
+}
+document.querySelectorAll('a[href="#overview"], a[href="#holdings"]').forEach(a => a.addEventListener('click', () => setView('overview')));
+$('overviewTab').onclick = () => setView('overview');
+$('stockValueTab').onclick = () => setView('stock');
+for (const tab of [$('overviewTab'),$('stockValueTab')]) tab.onkeydown = e => {
+  if (['ArrowLeft','ArrowRight','Home','End'].includes(e.key)) { e.preventDefault(); const view = e.key==='Home' ? 'overview' : e.key==='End' ? 'stock' : activeView==='overview' ? 'stock' : 'overview'; setView(view); $(view==='overview'?'overviewTab':'stockValueTab').focus(); }
+};
+$('stockValueSelect').onchange = e => { stockSymbol = e.target.value; renderStockValue(); };
+document.querySelectorAll('[data-stock-period]').forEach(b => b.onclick = () => { stockPeriod = b.dataset.stockPeriod; document.querySelectorAll('[data-stock-period]').forEach(x=>x.classList.toggle('selected',x===b)); renderStockValue(); });
 let resizeTimer;
-window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { renderTrend(); renderWaterfall(); }, 120); });
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { renderTrend(); renderWaterfall(); renderStockValue(); }, 120); });
 render(); loadQuotes();
 // Read the shared cache while the app is visible; do not trigger Yahoo requests
 // or GitHub workflows from each visitor's phone.

@@ -47,3 +47,20 @@ test('CSV rejects incomplete rows, empty costs and duplicate codes', () => {
   const header = 'portfolio,symbol,name,quantity,cost\n';
   for (const body of ['m,7203,トヨタ,100,','m,7203,トヨタ,,100','m,7203,トヨタ,100','m,7203,トヨタ,100,100\nm,7203,トヨタ,100,100','m,7203,"未完,100,100']) assert.throws(() => importCSV(header+body));
 });
+test('latest quotes update valuation and gains without changing closing-price history or peak', () => {
+  const live = {'5801.T':{...quotes['5801.T'],live:{price:4000,at:'2026-10-19T14:00:00+09:00',previousClose:3366}},'7011.T':{...quotes['7011.T'],live:{price:3800,at:'2026-10-19T14:01:00+09:00',previousClose:3796}}};
+  const r = analyze(hs,live);
+  assert.equal(r.latest.value,15600000); assert.equal(r.latest.source,'latest');
+  assert.equal(r.previous.value,14324000); assert.equal(r.peak.value,19418000);
+  assert.equal(r.daily.at(-1).value,14324000); assert.equal(r.daily.at(-1).date,'2026-10-16');
+  assert.equal(r.latest.oldestAt,'2026-10-19T14:00:00+09:00');
+  assert.equal(r.latest.date,'2026-10-19'); assert.equal(r.historyDate,'2026-10-16');
+});
+test('partial latest coverage is explicitly mixed and does not produce a false daily change', () => {
+  const r = analyze(hs,{...quotes,'5801.T':{...quotes['5801.T'],live:{price:4000,at:'2026-10-19T14:00:00+09:00'}}});
+  assert.equal(r.latest.source,'mixed'); assert.equal(r.rows[1].priceKind,'close'); assert.equal(r.previous,null);
+});
+test('quotes older than the completed history are not used for live valuation', () => {
+  const r = analyze(hs,{...quotes,'5801.T':{...quotes['5801.T'],live:{price:1,at:'2026-10-15T14:00:00+09:00'}}});
+  assert.equal(r.latest.source,'close'); assert.equal(r.latest.value,14324000);
+});

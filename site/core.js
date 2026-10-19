@@ -35,16 +35,39 @@ export function analyze(holdings, quotes, { start = '', end = '9999-12-31' } = {
   const dates = [...maps[0].keys()].filter(d => d <= end && maps.every(m => Number.isFinite(m.get(d)) && m.get(d) > 0)).sort();
   const basis = holdings.reduce((a, h) => a + h.quantity * h.cost, 0);
   const latestDate = dates.at(-1);
-  const rows = latestDate ? holdings.map((h, i) => {
+  let rows = latestDate ? holdings.map((h, i) => {
     const close = maps[i].get(latestDate), value = close * h.quantity, costTotal = h.quantity * h.cost;
     return { ...h, close, value, costTotal, gain: value - costTotal, gainPct: costTotal ? (value / costTotal - 1) * 100 : null, date: latestDate, name: h.name || quotes[h.symbol].name || h.symbol };
   }) : [];
   const allDaily = dates.map(d => ({ date: d, value: holdings.reduce((v, h, i) => v + h.quantity * maps[i].get(d), 0) }));
   const daily = allDaily.filter(d => d.date >= start);
-  const latest = rows.length ? { date: latestDate, value: rows.reduce((v, h) => v + h.value, 0), basis, gain: rows.reduce((v, h) => v + h.gain, 0) } : null;
+  const historicalRows = rows;
+  const validLive = h => {
+    const l = quotes[h.symbol].live;
+    return l && Number.isFinite(l.price) && l.price > 0 && Number.isFinite(Date.parse(l.at)) && l.at.slice(0, 10) >= latestDate;
+  };
+  const liveCount = rows.filter(validLive).length;
+  if (liveCount) rows = rows.map((r, i) => {
+    if (!validLive(r)) return {...r, priceKind:'close', priceAt:`${r.date}T15:30:00+09:00`};
+    const l = quotes[r.symbol].live, value = r.quantity * l.price;
+    return {...r, close:l.price, value, gain:value-r.costTotal, gainPct:r.costTotal ? (value/r.costTotal-1)*100 : null, priceKind:'latest', priceAt:l.at};
+  });
+  const quoteTimes = liveCount ? rows.map(r => r.priceAt).sort((a,b) => Date.parse(a)-Date.parse(b)) : [];
+  const latest = rows.length ? { date: liveCount ? quoteTimes.at(-1).slice(0,10) : latestDate, value: rows.reduce((v, h) => v + h.value, 0), basis, gain: rows.reduce((v, h) => v + h.gain, 0),
+    source: liveCount ? (liveCount === rows.length ? 'latest' : 'mixed') : 'close', oldestAt:quoteTimes[0], newestAt:quoteTimes.at(-1) } : null;
   const peak = daily.reduce((a, d) => !a || d.value > a.value ? d : a, null);
   const lastDates = holdings.map(h => quotes[h.symbol].prices.at(-1)?.[0]).filter(Boolean);
-  return { rows, daily, unavailable, peak, latest, latestMismatch: lastDates.some(d => d !== latestDate), coverageStart: dates[0], previous: allDaily.at(-2) || null };
+  let previous = allDaily.at(-2) || null;
+  if (liveCount) {
+    const bases = rows.map((r,i) => {
+      if (r.priceKind !== 'latest') return null;
+      const l = quotes[r.symbol].live;
+      if (Number.isFinite(l.previousClose) && l.previousClose > 0) return l.previousClose;
+      return [...maps[i]].filter(([d]) => d < l.at.slice(0,10)).at(-1)?.[1] ?? null;
+    });
+    previous = bases.every(Number.isFinite) ? {value:holdings.reduce((v,h,i)=>v+h.quantity*bases[i],0)} : null;
+  }
+  return { rows, daily, unavailable, peak, latest, historyDate:latestDate, historicalRows, liveCount, latestMismatch: lastDates.some(d => d !== latestDate), coverageStart: dates[0], previous };
 }
 export function rangeStart(period, asOf) {
   if (!asOf) return '';

@@ -7,6 +7,8 @@ const pct = n => Number.isFinite(n) ? `${n >= 0 ? '+' : ''}${n.toFixed(2)}%` : '
 const number = n => Number(n).toLocaleString('ja-JP', { maximumFractionDigits: 6 });
 const escape = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const dateJP = s => s ? s.replaceAll('-', '/') : '—';
+const timeJP = s => s ? new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(s)) : '—';
+const valuationLabel = l => l?.source === 'close' ? `${dateJP(l.date)} 終値` : l ? `${timeJP(l.oldestAt)}${l.oldestAt !== l.newestAt ? `〜${timeJP(l.newestAt)}` : ''} 時点${l.source === 'mixed' ? '（一部終値）' : ''}` : '';
 const classOf = n => n < 0 ? 'negative' : n > 0 ? 'positive' : '';
 const freshState = () => { const id = crypto.randomUUID(); return { schema: SCHEMA, active: id, portfolios: [{ id, name: 'マイポートフォリオ', holdings: [] }] }; };
 let state, settings = {}, quoteData = { symbols: {} }, period = 'ytd', sort = 'value', sortDirection = -1, sample = false, result, toastTimer, rename = false, requestStarted = 0, busy = false, loadWarning = '';
@@ -40,7 +42,7 @@ function openSettings() {
 async function loadQuotes(showMessage = false) {
   if (busy) return;
   busy = true; $('refreshButton').disabled = true;
-  $('quoteStatus').textContent = '公開済みの終値を読み込んでいます…';
+  $('quoteStatus').textContent = '公開済みの株価を読み込んでいます…';
   try {
     const response = await fetch(`./data/quotes.json?t=${Date.now()}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -56,7 +58,7 @@ async function loadQuotes(showMessage = false) {
   } catch (error) {
     if (!result) render();
     $('quoteStatus').textContent = '株価データの読込に失敗';
-    notice(`株価データを取得できませんでした（${error.message}）。接続を確認し、再度「株価を取得」を押してください。`, true);
+    notice(`株価データを取得できませんでした（${error.message}）。接続を確認し、再度「最新データを読み込む」を押してください。`, true);
   } finally { busy = false; $('refreshButton').disabled = false; }
 }
 function render() {
@@ -78,17 +80,25 @@ function render() {
   $('totalGain').className = `metric-value ${l ? classOf(l.gain) : ''}`;
   $('gainRate').textContent = l ? `損益率 ${l.basis ? pct(l.gain / l.basis * 100) : '—（取得価額0円）'}` : '取得価額との比較';
   $('dayChange').textContent = !valueVisible ? '表示ボタンで金額を確認できます' : l && result.previous ? `前営業日比 ${signed(l.value - result.previous.value)}（${pct((l.value / result.previous.value - 1) * 100)}）` : '直近の終値で評価';
-  $('quoteStatus').textContent = l ? `${dateJP(l.date)} 終値 · Yahoo Finance` : hs.length ? '未取得の銘柄があります' : quoteData.asOf ? `株価収録：${dateJP(quoteData.asOf)}まで` : '銘柄を登録してください';
+  $('quoteStatus').textContent = l ? `${valuationLabel(l)} · サイト更新 ${timeJP(quoteData.generatedAt)}` : hs.length ? '未取得の銘柄があります' : quoteData.generatedAt ? `サイト更新 ${timeJP(quoteData.generatedAt)}` : '銘柄を登録してください';
   let message = '', warn = false;
   if (sample) message = 'サンプルの4銘柄を表示しています。あなたの保有内容には保存されません。「銘柄を登録」で通常の画面に戻ります。';
   if (result.unavailable.length) { message = `未取得の銘柄：${result.unavailable.join('、')}。誤った合計を避けるため評価額は表示していません。「株価取得の設定」から取得してください。`; warn = true; }
   if (hs.length && !result.unavailable.length && !l) { message = '全銘柄に終値が存在する共通営業日がありません。株価取得の設定からデータを更新してください。'; warn = true; }
-  if (result.latestMismatch) { message = `価格の収録日がそろっていないため、全銘柄の共通営業日 ${dateJP(l.date)} で集計しています。最新データを取得してください。`; warn = true; }
+  if (result.latestMismatch) { message = `価格の収録日がそろっていないため、推移グラフを共通営業日 ${dateJP(result.historyDate)} までで集計しています。最新データを取得してください。`; warn = true; }
   const failed = hs.filter(h => quoteData.errors?.[h.symbol]);
   if (failed.length) { message = `${failed.map(h => h.symbol).join('、')} の最新取得に失敗しました。前回成功分の株価を表示しています。取得設定から再試行してください。`; warn = true; }
+  const liveFailed = hs.filter(h => quoteData.liveErrors?.[h.symbol]);
+  if (liveFailed.length) { message = `${liveFailed.map(h => h.symbol).join('、')} の直近株価取得に失敗しています。前回価格または確定終値を使用しています。価格時刻を確認してください。`; warn = true; }
+  if (l?.source === 'mixed') { message = `一部銘柄の直近株価が未取得のため、確定終値を含む参考評価です。${message}`; warn = true; }
+  if (l?.oldestAt) {
+    const now = new Date(), minute = Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Tokyo',hour:'2-digit',minute:'2-digit',hour12:false}).format(now).split(':')[0])*60 + Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Tokyo',minute:'2-digit'}).format(now));
+    const weekday = new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Tokyo',weekday:'short'}).format(now);
+    if (!['Sat','Sun'].includes(weekday) && ((minute>=540&&minute<=690)||(minute>=750&&minute<=930)) && now-Date.parse(l.oldestAt)>30*60000) { message = `30分以上前の価格を含みます。取得遅延や売買未成立の可能性があります。${message}`; warn = true; }
+  }
   if (l) {
     const jstToday = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date());
-    const age = (Date.parse(jstToday) - Date.parse(l.date)) / 86400000;
+    const age = (Date.parse(jstToday) - Date.parse(l.newestAt?.slice(0,10) || l.date)) / 86400000;
     if (age > 4) { message = `株価は ${dateJP(l.date)} までのデータです。最新終値ではない可能性があります。取得設定から更新してください。${message ? ` ${message}` : ''}`; warn = true; }
   }
   if (loadWarning) { message = loadWarning; warn = true; }
@@ -97,8 +107,8 @@ function render() {
 }
 function renderTrend() {
   const { daily, peak } = result;
-  $('trendDates').textContent = daily.length ? `${dateJP(daily[0].date)} — ${dateJP(daily.at(-1).date)} · ${daily.length}営業日` : '終値ベース・株式分割調整済み';
-  $('peakLine').innerHTML = peak ? `<span>期間内の最高評価額 <strong>${yen(peak.value)}</strong> ${dateJP(peak.date)}</span><span>最高額から <strong>${pct((daily.at(-1).value / peak.value - 1) * 100)}</strong></span>` : '';
+  $('trendDates').textContent = daily.length ? `${dateJP(daily[0].date)} — ${dateJP(daily.at(-1).date)} · ${daily.length}営業日 · 確定終値` : '終値ベース・株式分割調整済み';
+  $('peakLine').innerHTML = peak ? `<span>期間内の最高評価額 <strong>${yen(peak.value)}</strong> ${dateJP(peak.date)}</span><span>直近終値の最高額比 <strong>${pct((daily.at(-1).value / peak.value - 1) * 100)}</strong></span>` : '';
   if (!daily.length) { $('trendChart').innerHTML = '<div class="empty-chart">銘柄を登録すると評価額の推移が表示されます</div>'; return; }
   const W = Math.max(300, $('trendChart').clientWidth), H = $('trendChart').clientHeight || 270, left = 55, right = 18, top = 22, bottom = 32;
   const values = daily.map(d => d.value), min = Math.min(...values), max = Math.max(...values);
@@ -124,7 +134,7 @@ function renderTrend() {
   area.addEventListener('pointerleave', () => { tip.classList.add('hidden'); $('hoverLine').setAttribute('opacity', 0); $('hoverDot').setAttribute('opacity', 0); });
 }
 function renderWaterfall() {
-  $('breakdownDate').textContent = result.latest ? `${dateJP(result.latest.date)} 終値 · 取得価額との差額` : '銘柄ごとの貢献をウォーターフォールで表示';
+  $('breakdownDate').textContent = result.latest ? `${valuationLabel(result.latest)} · 取得価額との差額` : '銘柄ごとの貢献をウォーターフォールで表示';
   if (!result.rows.length) { $('waterfallChart').innerHTML = '<div class="empty-chart" style="height:220px">銘柄ごとの利益・損失がここに表示されます</div>'; return; }
   const bars = waterfall(result.rows), total = result.latest.gain, W = Math.max($('waterfallChart').clientWidth, bars.length * 65 + 130), H = 240, left = 65, top = 27, bottom = 48;
   const stops = [0, total, ...bars.flatMap(b => [b.start, b.end])], lo = Math.min(...stops), hi = Math.max(...stops), pad = (hi - lo) * .15 || 1000;
@@ -144,7 +154,7 @@ function renderTable() {
   const hs = holdings(), query = $('searchInput').value.trim().toLowerCase(), bySymbol = new Map(result.rows.map(r => [r.symbol, r]));
   const rows = hs.map(h => bySymbol.get(h.symbol) || { ...h, name: h.name || quoteData.symbols[h.symbol]?.name || h.symbol, costTotal: h.cost * h.quantity });
   const filtered = rows.filter(r => `${r.name} ${r.symbol}`.toLowerCase().includes(query)).sort((a, b) => ((a[sort] ?? -Infinity) - (b[sort] ?? -Infinity)) * sortDirection);
-  $('holdingsBody').innerHTML = filtered.map(r => `<tr><td class="name-cell">${escape(r.name)}<span class="symbol">${escape(r.symbol)} · 東証</span></td><td>${number(r.quantity)}株</td><td>${yen(r.cost)}</td><td>${yen(r.costTotal)}</td><td>${yen(r.close)}</td><td><strong>${yen(r.value)}</strong></td><td class="${classOf(r.gain)}"><strong>${signed(r.gain)}</strong><span class="rate">${pct(r.gainPct)}</span></td><td><button class="text-button" data-edit="${escape(r.id)}" ${sample ? 'disabled' : ''}>編集</button><button class="text-button" data-delete="${escape(r.id)}" ${sample ? 'disabled' : ''}>削除</button></td></tr>`).join('');
+  $('holdingsBody').innerHTML = filtered.map(r => `<tr><td class="name-cell">${escape(r.name)}<span class="symbol">${escape(r.symbol)} · 東証</span></td><td>${number(r.quantity)}株</td><td>${yen(r.cost)}</td><td>${yen(r.costTotal)}</td><td>${yen(r.close)}<span class="rate">${r.priceAt ? `${timeJP(r.priceAt)} ${r.priceKind==='close'?'終値':'時点'}` : r.date ? `${dateJP(r.date)} 終値` : ''}</span></td><td><strong>${yen(r.value)}</strong></td><td class="${classOf(r.gain)}"><strong>${signed(r.gain)}</strong><span class="rate">${pct(r.gainPct)}</span></td><td><button class="text-button" data-edit="${escape(r.id)}" ${sample ? 'disabled' : ''}>編集</button><button class="text-button" data-delete="${escape(r.id)}" ${sample ? 'disabled' : ''}>削除</button></td></tr>`).join('');
   if (hs.length && !filtered.length) $('holdingsBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#8a9b8a">該当する銘柄がありません</td></tr>';
   const l = result.latest;
   $('holdingsFoot').innerHTML = l ? `<tr><td>全銘柄合計</td><td>${hs.length}銘柄</td><td>—</td><td>${yen(l.basis)}</td><td>—</td><td>${yen(l.value)}</td><td class="${classOf(l.gain)}">${signed(l.gain)}</td><td></td></tr>` : '';
@@ -262,7 +272,7 @@ $('dispatchButton').onclick = async () => {
           $('settingsMessage').textContent = '取得と公開が完了しました。最新データを読み込みます。';
           await loadQuotes(false); $('dispatchButton').disabled = false; toast('株価の取得・公開が完了しました。'); return;
         }
-        if (Date.now() - requestStarted > 10 * 60000) throw new Error('処理が長引いています。GitHubの実行画面で確認し、完了後に「株価を取得」を押してください。');
+        if (Date.now() - requestStarted > 10 * 60000) throw new Error('処理が長引いています。GitHubの実行画面で確認し、完了後に「最新データを読み込む」を押してください。');
         workflowTimer = setTimeout(poll, 15000);
       } catch (error) { $('settingsMessage').textContent = error.message; $('dispatchButton').disabled = false; }
     };
@@ -272,3 +282,7 @@ $('dispatchButton').onclick = async () => {
 let resizeTimer;
 window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { renderTrend(); renderWaterfall(); }, 120); });
 render(); loadQuotes();
+// Read the shared cache while the app is visible; do not trigger Yahoo requests
+// or GitHub workflows from each visitor's phone.
+setInterval(() => { if (document.visibilityState === 'visible') loadQuotes(false); }, 60000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadQuotes(false); });

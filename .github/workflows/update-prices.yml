@@ -9,6 +9,10 @@ on:
         required: false
         default: ''
   schedule:
+    # JST 09:02, 09:17, ...; session-final snapshots at 11:32 / 15:32.
+    - cron: '2,17,32,47 0,1,4,5 * * 1-5'
+    - cron: '2,17,32 2,6 * * 1-5'
+    - cron: '32,47 3 * * 1-5'
     - cron: '17 9 * * 1-5'
 
 permissions:
@@ -36,15 +40,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: 休場日判定ライブラリ
+        run: pip install -r requirements.txt
+      - name: 取引日と更新モードを判定
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule || '' }}
+        run: python3 scripts/market_calendar.py
       - name: 計算と株価変換のテスト
+        if: steps.plan.outputs.run == 'true'
         run: |
           node --test tests/*.test.js
           python3 -m unittest discover -s tests -p 'test_*.py'
-      - name: Yahooから過去5年の日次終値を取得
+      - name: Yahooの直近株価と確定終値を更新
+        if: steps.plan.outputs.run == 'true'
         env:
           REQUESTED_SYMBOLS: ${{ inputs.symbols || '' }}
-        run: python3 scripts/update_prices.py
+        run: python3 scripts/update_prices.py --mode '${{ steps.plan.outputs.mode }}'
       - name: 公開株価キャッシュと取得対象コードだけを保存
+        if: steps.plan.outputs.run == 'true'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -54,9 +69,12 @@ jobs:
             git push origin HEAD:main
           fi
       - uses: actions/configure-pages@v5
+        if: steps.plan.outputs.run == 'true'
       - uses: actions/upload-pages-artifact@v3
+        if: steps.plan.outputs.run == 'true'
         with:
           path: site
       - name: GitHub Pagesに公開
+        if: steps.plan.outputs.run == 'true'
         id: deployment
         uses: actions/deploy-pages@v4

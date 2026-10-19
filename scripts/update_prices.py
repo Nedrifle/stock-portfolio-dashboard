@@ -70,24 +70,45 @@ def parse_response(payload, symbol, now):
             'splits': sorted(splits, key=lambda x: x['date'])}
 
 def fetch_symbol(symbol, now):
-    query = urllib.parse.urlencode({'range': '5y', 'interval': '1d', 'events': 'splits'})
+    return parse_response(request_chart(symbol, '5y', '1d'), symbol, now)
+
+def request_chart(symbol, period, interval):
+    query = urllib.parse.urlencode({'range': period, 'interval': interval, 'events': 'splits'})
     url = f'https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?{query}'
     request = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'})
     for attempt in range(3):
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 payload = json.load(response)
-            return parse_response(payload, symbol, now)
+            return payload
         except (urllib.error.URLError, TimeoutError, OSError):
             if attempt == 2:
                 raise
             time.sleep(2 ** attempt)
+
+def parse_live(payload, symbol, now):
+    chart = payload.get('chart', {})
+    if chart.get('error') or not chart.get('result'):
+        raise ValueError('No latest quote')
+    meta = chart['result'][0].get('meta', {})
+    if meta.get('symbol') != symbol or meta.get('currency') != 'JPY':
+        raise ValueError('Unexpected live symbol/currency')
+    price, stamp = meta.get('regularMarketPrice'), meta.get('regularMarketTime')
+    if not isinstance(price, (int, float)) or not math.isfinite(price) or price <= 0 or not isinstance(stamp, (int, float)):
+        raise ValueError('Invalid latest quote')
+    at = dt.datetime.fromtimestamp(stamp, JST)
+    if at > now + dt.timedelta(minutes=5):
+        raise ValueError('Future quote timestamp')
+    previous = meta.get('chartPreviousClose', meta.get('previousClose'))
+    previous = previous if isinstance(previous, (int, float)) and math.isfinite(previous) and previous > 0 else None
+    return {'price': price, 'at': at.isoformat(), 'fetchedAt': now.isoformat(), 'previousClose': previous}
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--symbols', default=os.environ.get('REQUESTED_SYMBOLS', ''))
     parser.add_argument('--registry', type=pathlib.Path, default=ROOT / 'market-symbols.json')
     parser.add_argument('--output', type=pathlib.Path, default=ROOT / 'site/data/quotes.json')
+    parser.add_argument('--mode', choices=['all', 'intraday'], default='all')
     args = parser.parse_args()
     existing = json.loads(args.registry.read_text()) if args.registry.exists() else []
     requested = normalized_symbols(args.symbols)
@@ -96,25 +117,43 @@ def main():
         raise ValueError('Registry must contain between 1 and 300 Tokyo symbols')
     old = json.loads(args.output.read_text()) if args.output.exists() else {'symbols': {}}
     now = dt.datetime.now(JST)
-    quotes, errors = {}, {}
+    quotes, errors, live_errors = {}, {}, {}
     def update(symbol):
+        quote = old.get('symbols', {}).get(symbol)
+        history_error = live_error = None
         try:
-            return symbol, fetch_symbol(symbol, now), None
+            # Refresh history once each day even in intraday mode, so a new
+            # split is reflected in the historical price basis too.
+            if args.mode == 'all' or not quote or quote.get('fetchedAt', '')[:10] != now.date().isoformat():
+                previous_live = quote.get('live') if quote else None
+                quote = fetch_symbol(symbol, now)
+                if previous_live:
+                    quote['live'] = previous_live
         except Exception as error:
-            # Error classes only: no credentials/request contents are logged.
-            return symbol, old.get('symbols', {}).get(symbol), f'取得失敗 ({type(error).__name__})'
+            history_error = f'終値取得失敗 ({type(error).__name__})'
+        try:
+            live = parse_live(request_chart(symbol, '1d', '1m'), symbol, now)
+            if quote:
+                quote = {**quote, 'live': live}
+        except Exception as error:
+            live_error = f'直近株価取得失敗 ({type(error).__name__})'
+        return symbol, quote, history_error, live_error
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-        for symbol, quote, error in pool.map(update, symbols):
+        for symbol, quote, error, live_error in pool.map(update, symbols):
             if quote:
                 quotes[symbol] = quote
             if error:
                 errors[symbol] = error
-            print(f'{symbol}: {"kept previous / failed" if error else "updated"}', flush=True)
+            elif args.mode == 'intraday' and symbol in old.get('errors', {}) and quote and quote.get('fetchedAt', '')[:10] != now.date().isoformat():
+                errors[symbol] = old['errors'][symbol]
+            if live_error:
+                live_errors[symbol] = live_error
+            print(f'{symbol}: history={"failed" if error else "ok"} latest={"failed" if live_error else "ok"}', flush=True)
     if not quotes:
         raise RuntimeError('No data available; existing data was not modified')
     data = {'schema': 1, 'source': 'Yahoo Finance public chart endpoint',
             'generatedAt': now.isoformat(), 'asOf': max(q['prices'][-1][0] for q in quotes.values()),
-            'symbols': quotes, 'errors': errors}
+            'symbols': quotes, 'errors': errors, 'liveErrors': live_errors}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temp = args.output.with_suffix('.tmp')
     temp.write_text(json.dumps(data, ensure_ascii=False, separators=(',', ':')))
@@ -123,9 +162,11 @@ def main():
     print(f'Updated {len(quotes) - len([s for s in errors if s in quotes])}/{len(symbols)}; cutoff={completed_cutoff(now)}')
     if summary := os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(summary, 'a') as stream:
-            stream.write(f'## 株価取得\n\n収録 {len(quotes)}銘柄 / 取得失敗 {len(errors)}銘柄\n\n')
+            stream.write(f'## 株価取得\n\n収録 {len(quotes)}銘柄 / 終値取得失敗 {len(errors)}銘柄 / 直近価格取得失敗 {len(live_errors)}銘柄\n\n')
             if errors:
                 stream.write('取得失敗分は前回データを保持しています。\n\n' + '\n'.join(f'- {s}: {e}' for s, e in errors.items()))
+            if live_errors:
+                stream.write('\n\n直近価格取得失敗（前回価格または終値を使用）\n\n' + '\n'.join(f'- {s}: {e}' for s, e in live_errors.items()))
 
 if __name__ == '__main__':
     main()

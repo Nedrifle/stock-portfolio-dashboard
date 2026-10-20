@@ -5,7 +5,7 @@
   <meta name="theme-color" content="#123d36">
   <meta name="description" content="保有株の価値を日々の終値で。株式ポートフォリオの推移・損益・銘柄別内訳を端末内で管理。">
   <title>株式ポートフォリオ | Stockfolio</title>
-  <link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css?v=quote-freshness-1">
+  <link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css?v=prominent-tabs-1">
 </head>
 <body>
 <aside class="sidebar">
@@ -22,6 +22,7 @@
     <section class="page-heading"><div><div class="eyebrow">YOUR INVESTMENTS, IN VIEW</div><h1>株式ポートフォリオ</h1><p>日々の価値の変化を、ひと目で。</p></div><div class="heading-actions"><button id="refreshButton" class="button secondary"><span>↻</span> 最新データを読み込む</button><button id="addButton" class="button primary">＋ 銘柄を登録</button></div></section>
     <section class="portfolio-toolbar"><div class="portfolio-controls"><label for="portfolioSelect">ポートフォリオ</label><select id="portfolioSelect"></select><button id="addPortfolio" class="text-button">＋ 新規</button><button id="renamePortfolio" class="text-button">名前を変更</button></div><div id="quoteStatus" class="quote-status" role="status">株価データを確認中…</div></section>
     <div id="notice" class="notice hidden" role="status"></div>
+    <p class="view-switch-label">表示を切り替え</p>
     <div class="view-tabs" role="tablist" aria-label="表示内容"><button id="overviewTab" role="tab" aria-selected="true" aria-controls="overviewPanel">ポートフォリオ全体</button><button id="stockValueTab" role="tab" aria-selected="false" aria-controls="stockValuePanel" tabindex="-1">銘柄別時価評価額</button></div>
     <div id="overviewPanel" role="tabpanel" aria-labelledby="overviewTab">
     <section class="summary-grid" aria-label="ポートフォリオ概要">

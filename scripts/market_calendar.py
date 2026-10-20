@@ -18,7 +18,10 @@ def plan(event, schedule, now):
         return True, 'all'
     if schedule == '17 9 * * 1-5':
         return trading_day(now.date()), 'all'
-    return intraday_window(now), 'intraday'
+    # GitHub can start scheduled jobs late. Retain catch-up during lunch
+    # and after the close rather than discarding those delayed updates.
+    minute = now.hour * 60 + now.minute
+    return trading_day(now.date()) and 540 <= minute <= 990, 'intraday'
 
 if __name__ == '__main__':
     run, mode = plan(os.environ.get('EVENT_NAME', ''), os.environ.get('EVENT_SCHEDULE', ''), dt.datetime.now(JST))

@@ -40,6 +40,9 @@ class PricesTest(unittest.TestCase):
         self.assertTrue(cal.intraday_window(now(9,2)));self.assertTrue(cal.intraday_window(now(15,32)))
         self.assertFalse(cal.intraday_window(now(12,17)));self.assertFalse(cal.intraday_window(now(16,2)))
         self.assertEqual(cal.plan('schedule','17 9 * * 1-5',now(18,17)),(True,'all'))
+        self.assertEqual(cal.plan('schedule','2,17,32,47 0-6 * * 1-5',now(12,17)),(True,'intraday'))
+        self.assertEqual(cal.plan('schedule','2,17,32,47 0-6 * * 1-5',now(16,2)),(True,'intraday'))
+        self.assertEqual(cal.plan('schedule','2,17,32,47 0-6 * * 1-5',now(17,2)),(False,'intraday'))
         self.assertEqual(cal.plan('workflow_dispatch','',now(12,17)),(True,'all'))
     def test_daily_history_never_includes_the_intraday_bar(self):
         r=p.parse_response(self.payload(),'5801.T',dt.datetime(2026,10,16,14,tzinfo=p.JST))

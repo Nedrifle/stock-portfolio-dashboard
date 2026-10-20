@@ -49,12 +49,13 @@ async function loadQuotes(showMessage = false) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     if (data.schema !== 1 || !data.symbols || Object.values(data.symbols).some(q => !Array.isArray(q.prices))) throw new Error('株価データの形式を確認してください。');
+    const unchanged = quoteData.generatedAt === data.generatedAt;
     quoteData = data;
     render();
     if (showMessage) {
       const missing = holdings().filter(h => !quoteData.symbols[h.symbol]);
       if (missing.length) { openSettings(); $('settingsMessage').textContent = `未取得：${missing.map(h => h.symbol).join('、')}。下のボタンからYahoo取得を実行してください。`; }
-      else toast('公開済みの株価データを読み込みました。Yahooから再取得するには「株価取得の設定」を開いてください。');
+      else toast(unchanged ? `公開株価は前回と同じです（最終更新 ${timeJP(data.generatedAt)}）。Yahooから再取得するには「株価取得の設定」を開いてください。` : '公開済みの株価データを読み込みました。Yahooから再取得するには「株価取得の設定」を開いてください。');
     }
   } catch (error) {
     if (!result) render();
@@ -81,7 +82,11 @@ function render() {
   $('totalGain').className = `metric-value ${valueVisible && l ? classOf(l.gain) : ''}`;
   $('gainRate').textContent = !valueVisible ? '損益率 ××%' : l ? `損益率 ${l.basis ? pct(l.gain / l.basis * 100) : '—（取得価額0円）'}` : '取得価額との比較';
   $('dayChange').textContent = !valueVisible ? '表示ボタンで金額を確認できます' : l && result.previous ? `前営業日比 ${signed(l.value - result.previous.value)}（${pct((l.value / result.previous.value - 1) * 100)}）` : '直近の終値で評価';
-  $('quoteStatus').textContent = l ? `${valuationLabel(l)} · サイト更新 ${timeJP(quoteData.generatedAt)}` : hs.length ? '未取得の銘柄があります' : quoteData.generatedAt ? `サイト更新 ${timeJP(quoteData.generatedAt)}` : '銘柄を登録してください';
+  $('quoteStatus').textContent = l ? `${valuationLabel(l)} · 公開株価更新 ${timeJP(quoteData.generatedAt)}` : hs.length ? '未取得の銘柄があります' : quoteData.generatedAt ? `公開株価更新 ${timeJP(quoteData.generatedAt)}` : '銘柄を登録してください';
+  const nowJst = new Date(Date.now()+9*3600000), minuteJst = nowJst.getUTCHours()*60+nowJst.getUTCMinutes();
+  const publicationDelayed = ![0,6].includes(nowJst.getUTCDay()) && minuteJst >= 540 && minuteJst <= 945 && Date.now()-Date.parse(quoteData.generatedAt)>45*60000;
+  $('quoteStatus').classList.toggle('publication-delayed',publicationDelayed);
+  if (publicationDelayed) $('quoteStatus').textContent += ' · 公開株価の更新が遅れています';
   let message = '', warn = false;
   if (sample) message = 'サンプルの4銘柄を表示しています。あなたの保有内容には保存されません。「銘柄を登録」で通常の画面に戻ります。';
   if (result.unavailable.length) { message = `未取得の銘柄：${result.unavailable.join('、')}。誤った合計を避けるため評価額は表示していません。「株価取得の設定」から取得してください。`; warn = true; }
@@ -102,6 +107,7 @@ function render() {
     const age = (Date.parse(jstToday) - Date.parse(l.newestAt?.slice(0,10) || l.date)) / 86400000;
     if (age > 4) { message = `株価は ${dateJP(l.date)} までのデータです。最新終値ではない可能性があります。取得設定から更新してください。${message ? ` ${message}` : ''}`; warn = true; }
   }
+  if (publicationDelayed) { message = `公開株価が45分以上更新されていません。読み込みボタンは公開済みデータを読み直します。Yahooからの再取得は「株価取得の設定」から実行できます。${message}`; warn = true; }
   if (loadWarning) { message = loadWarning; warn = true; }
   notice(message, warn);
   renderTrend(); renderWaterfall(); renderTable(); renderStockValue();

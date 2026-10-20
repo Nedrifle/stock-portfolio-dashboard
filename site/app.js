@@ -84,7 +84,9 @@ function render() {
   $('dayChange').textContent = !valueVisible ? '表示ボタンで金額を確認できます' : l && result.previous ? `前営業日比 ${signed(l.value - result.previous.value)}（${pct((l.value / result.previous.value - 1) * 100)}）` : '直近の終値で評価';
   $('quoteStatus').textContent = l ? `${valuationLabel(l)} · 公開株価更新 ${timeJP(quoteData.generatedAt)}` : hs.length ? '未取得の銘柄があります' : quoteData.generatedAt ? `公開株価更新 ${timeJP(quoteData.generatedAt)}` : '銘柄を登録してください';
   const nowJst = new Date(Date.now()+9*3600000), minuteJst = nowJst.getUTCHours()*60+nowJst.getUTCMinutes();
-  const publicationDelayed = ![0,6].includes(nowJst.getUTCDay()) && minuteJst >= 540 && minuteJst <= 945 && Date.now()-Date.parse(quoteData.generatedAt)>45*60000;
+  const todayClose = Date.parse(`${nowJst.toISOString().slice(0,10)}T15:30:00+09:00`);
+  const awaitingClose = l && minuteJst >= 990 && Date.parse(l.newestAt || `${l.date}T15:30:00+09:00`) < todayClose;
+  const publicationDelayed = ![0,6].includes(nowJst.getUTCDay()) && ((minuteJst >= 540 && minuteJst <= 945 && Date.now()-Date.parse(quoteData.generatedAt)>45*60000) || awaitingClose);
   $('quoteStatus').classList.toggle('publication-delayed',publicationDelayed);
   if (publicationDelayed) $('quoteStatus').textContent += ' · 公開株価の更新が遅れています';
   let message = '', warn = false;
@@ -107,7 +109,7 @@ function render() {
     const age = (Date.parse(jstToday) - Date.parse(l.newestAt?.slice(0,10) || l.date)) / 86400000;
     if (age > 4) { message = `株価は ${dateJP(l.date)} までのデータです。最新終値ではない可能性があります。取得設定から更新してください。${message ? ` ${message}` : ''}`; warn = true; }
   }
-  if (publicationDelayed) { message = `公開株価が45分以上更新されていません。読み込みボタンは公開済みデータを読み直します。Yahooからの再取得は「株価取得の設定」から実行できます。${message}`; warn = true; }
+  if (publicationDelayed) { message = `${awaitingClose ? '本日の取引終了後の株価がまだ公開されていません。' : '公開株価が45分以上更新されていません。'}読み込みボタンは公開済みデータを読み直します。Yahooからの再取得は「株価取得の設定」から実行できます。${message}`; warn = true; }
   if (loadWarning) { message = loadWarning; warn = true; }
   notice(message, warn);
   renderTrend(); renderWaterfall(); renderTable(); renderStockValue();

@@ -55,7 +55,7 @@ async function loadQuotes(showMessage = false) {
     if (showMessage) {
       const missing = holdings().filter(h => !quoteData.symbols[h.symbol]);
       if (missing.length) { openSettings(); $('settingsMessage').textContent = `未取得：${missing.map(h => h.symbol).join('、')}。下のボタンからYahoo取得を実行してください。`; }
-      else toast(unchanged ? `公開株価は前回と同じです（最終更新 ${timeJP(data.generatedAt)}）。Yahooから再取得するには「株価取得の設定」を開いてください。` : '公開済みの株価データを読み込みました。Yahooから再取得するには「株価取得の設定」を開いてください。');
+      else toast(unchanged ? `公開株価は前回と同じです（最終更新 ${timeJP(data.generatedAt)}）。自動更新にユーザー側の設定は不要です。` : '公開済みの株価データを読み込みました。自動更新にユーザー側の設定は不要です。');
     }
   } catch (error) {
     if (!result) render();
@@ -107,9 +107,9 @@ function render() {
   if (l) {
     const jstToday = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date());
     const age = (Date.parse(jstToday) - Date.parse(l.newestAt?.slice(0,10) || l.date)) / 86400000;
-    if (age > 4) { message = `株価は ${dateJP(l.date)} までのデータです。最新終値ではない可能性があります。取得設定から更新してください。${message ? ` ${message}` : ''}`; warn = true; }
+    if (age > 4) { message = `株価は ${dateJP(l.date)} までのデータです。最新終値ではない可能性があります。公開側の更新状況を確認してください。${message ? ` ${message}` : ''}`; warn = true; }
   }
-  if (publicationDelayed) { message = `${awaitingClose ? '本日の取引終了後の株価がまだ公開されていません。' : '公開株価が45分以上更新されていません。'}読み込みボタンは公開済みデータを読み直します。Yahooからの再取得は「株価取得の設定」から実行できます。${message}`; warn = true; }
+  if (publicationDelayed) { message = `${awaitingClose ? '本日の取引終了後の株価がまだ公開されていません。' : '公開株価が45分以上更新されていません。'}公開側の自動更新が遅れています。ユーザー側の設定は不要です。読み込みボタンは公開済みデータを読み直すため、取得処理の開始はできません。${message}`; warn = true; }
   if (loadWarning) { message = loadWarning; warn = true; }
   notice(message, warn);
   renderTrend(); renderWaterfall(); renderTable(); renderStockValue();

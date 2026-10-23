@@ -1,4 +1,4 @@
-import { SCHEMA, holdingOf, symbolOf, validateBackup, analyze, rangeStart, waterfall, gainHistory, exportCSV, importCSV } from './core.js?v=stock-gain-history-1';
+import { SCHEMA, holdingOf, symbolOf, validateBackup, analyze, rangeStart, gainHistory, exportCSV, importCSV } from './core.js?v=stock-gain-history-1';
 const $ = id => document.getElementById(id);
 const KEY = 'stockfolio.v1', CONFIG = 'stockfolio.settings.v1';
 const yen = n => Number.isFinite(n) ? `¥${Math.round(n).toLocaleString('ja-JP')}` : '—';
@@ -112,7 +112,7 @@ function render() {
   if (publicationDelayed) { message = `${awaitingClose ? '本日の取引終了後の株価がまだ公開されていません。' : '公開株価が45分以上更新されていません。'}公開側の自動更新が遅れています。ユーザー側の設定は不要です。読み込みボタンは公開済みデータを読み直すため、取得処理の開始はできません。${message}`; warn = true; }
   if (loadWarning) { message = loadWarning; warn = true; }
   notice(message, warn);
-  renderTrend(); renderWaterfall(); renderTable(); renderStockValue();
+  renderTrend(); renderBreakdown(); renderTable(); renderStockValue();
 }
 function renderTrend() { drawTrend(result); }
 function drawTrend(analysis, prefix = '', label = '時価評価額の推移') {
@@ -150,10 +150,10 @@ function drawTrend(analysis, prefix = '', label = '時価評価額の推移') {
   });
   area.addEventListener('pointerleave', () => { tip.classList.add('hidden'); $(id('hoverLine')).setAttribute('opacity', 0); $(id('hoverDot')).setAttribute('opacity', 0); });
 }
-function renderWaterfall() {
+function renderBreakdown() {
   renderDailyChange();
-  drawWaterfall('waterfallChart', result.rows, result.latest?.gain, '含み損益内訳');
-  $('breakdownDate').textContent = result.latest ? `${valuationLabel(result.latest)} · 取得価額との差額` : '銘柄ごとの貢献をウォーターフォールで表示';
+  drawBars('waterfallChart', result.rows, '含み損益内訳', '含み損益（円）');
+  $('breakdownDate').textContent = result.latest ? `${valuationLabel(result.latest)} · 取得価額との差額` : '銘柄ごとの含み損益をバーチャートで表示';
 }
 function renderDailyChange() {
   const change = result.dayChange;
@@ -161,16 +161,18 @@ function renderDailyChange() {
   $('dailyChangeTotal').className = change ? classOf(change.value) : '';
   $('dailyChangeRate').textContent = change ? pct(change.pct) : '';
   $('dailyChangeDate').textContent = change ? `${valuationLabel(result.latest)} · 前営業日終値比` : '比較できる前営業日の終値がそろうと表示します';
-  drawWaterfall('dailyChangeChart', change?.rows.map(r => ({...r, gain:r.change})) || [], change?.value, '前日比増減の内訳', true);
+  drawBars('dailyChangeChart', change?.rows.map(r => ({...r, gain:r.change})) || [], '前日比増減の内訳');
 }
-function drawWaterfall(target, rows, total, title, daily = false) {
+function drawBars(target, rows, title, axisTitle = '増減額（円）') {
   if (!rows.length) { $(target).innerHTML = '<div class="empty-chart" style="height:220px">比較に必要な株価がそろうと内訳を表示します</div>'; return; }
-  const bars = daily ? [...rows].sort((a,b) => Math.abs(b.gain)-Math.abs(a.gain) || a.symbol.localeCompare(b.symbol)).map(r => ({...r,start:0,end:r.gain})) : waterfall(rows), W = Math.max(320, $(target).clientWidth), left = W < 500 ? 96 : 165, right = W < 500 ? 88 : 125;
-  const top = 42, step = 46, H = top + (bars.length + (daily ? 0 : 1)) * step + 12, bh = 20;
-  const stops = [0, ...(daily ? [] : [total]), ...bars.flatMap(b => [b.start, b.end])], extent = Math.max(...stops.map(Math.abs)), lo = daily ? -extent : Math.min(...stops), hi = daily ? extent : Math.max(...stops), pad = (hi - lo) * .08 || 1000;
+  const absoluteTotal = rows.reduce((sum, r) => sum + Math.abs(r.gain), 0);
+  const bars = [...rows].sort((a,b) => Math.abs(b.gain)-Math.abs(a.gain) || a.symbol.localeCompare(b.symbol)).map(r => ({...r, start:0, end:r.gain, share:absoluteTotal ? Math.abs(r.gain)/absoluteTotal*100 : 0}));
+  const W = Math.max(320, $(target).clientWidth), left = W < 500 ? 96 : 165, right = W < 500 ? 88 : 125;
+  const top = 42, step = 46, H = top + bars.length * step + 12, bh = 20;
+  const extent = Math.max(...bars.map(b => Math.abs(b.gain))), lo = -extent, hi = extent, pad = (hi - lo) * .08 || 1000;
   const x = v => left + (v - lo + pad) / (hi - lo + 2 * pad) * (W - left - right);
   const axisLabel = n => Math.abs(n) >= 10000 ? `${number(Math.round(n / 1000) / 10)}万` : number(Math.round(n));
-  let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px" role="img" aria-label="${title}${daily ? '。増減額の絶対値が大きい順' : `。合計${signed(total)}`}"><text x="${left}" y="12" class="svg-small">増減額（円）</text><text x="${W - 6}" y="12" class="svg-small" text-anchor="end">金額${daily ? ' / 構成比' : ''}</text>`;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px" role="img" aria-label="${title}。金額の絶対値が大きい順"><text x="${left}" y="12" class="svg-small">${axisTitle}</text><text x="${W - 6}" y="12" class="svg-small" text-anchor="end">金額 / 構成比</text>`;
   const ticks = W < 500 ? 3 : 5;
   for (let i = 0; i < ticks; i++) {
     const v = lo + i / (ticks - 1) * (hi - lo);
@@ -179,11 +181,9 @@ function drawWaterfall(target, rows, total, title, daily = false) {
   svg += `<line x1="${x(0)}" x2="${x(0)}" y1="${top - 8}" y2="${H - 12}" stroke="#b3c7ba"/>`;
   bars.forEach((b, i) => {
     const yy = top + step * i, xx = x(Math.min(b.start, b.end)), width = Math.max(1, Math.abs(x(b.end) - x(b.start)));
-    svg += `<g><title>${escape(b.name)}：${signed(b.gain)}${daily ? `（構成比 ${b.share.toFixed(1)}%）` : ''}</title><text x="4" y="${yy + 9}" class="svg-small">${escape(b.name.slice(0, W < 500 ? 8 : 15))}</text><text x="4" y="${yy + 23}" class="svg-small">${escape(b.symbol.replace('.T', ''))}</text><rect x="${xx}" y="${yy}" width="${width}" height="${bh}" rx="2" fill="${b.gain >= 0 ? '#518b6e' : '#ca8070'}"/><text x="${W - 6}" y="${yy + 10}" class="svg-small" text-anchor="end">${signed(b.gain)}</text>${daily ? `<text x="${W - 6}" y="${yy + 25}" class="svg-small" text-anchor="end">${b.share.toFixed(1)}%</text>` : ''}${daily ? '' : `<line x1="${x(b.end)}" x2="${x(b.end)}" y1="${yy + bh}" y2="${yy + step}" stroke="#b8ccbe" stroke-dasharray="2 2"/>`}</g>`;
+    svg += `<g><title>${escape(b.name)}：${signed(b.gain)}（構成比 ${b.share.toFixed(1)}%）</title><text x="4" y="${yy + 9}" class="svg-small">${escape(b.name.slice(0, W < 500 ? 8 : 15))}</text><text x="4" y="${yy + 23}" class="svg-small">${escape(b.symbol.replace('.T', ''))}</text><rect x="${xx}" y="${yy}" width="${width}" height="${bh}" rx="2" fill="${b.gain >= 0 ? '#518b6e' : '#ca8070'}"/><text x="${W - 6}" y="${yy + 10}" class="svg-small" text-anchor="end">${signed(b.gain)}</text>${`<text x="${W - 6}" y="${yy + 25}" class="svg-small" text-anchor="end">${b.share.toFixed(1)}%</text>`}</g>`;
   });
-  const yy = top + bars.length * step;
-  if (!daily) svg += `<text x="4" y="${yy + 14}" class="svg-small">合計</text><rect x="${x(Math.min(0,total))}" y="${yy}" width="${Math.max(1,Math.abs(x(total)-x(0)))}" height="${bh}" fill="#254940" rx="2"/><text x="${W - 6}" y="${yy + 14}" class="svg-small" text-anchor="end">${signed(total)}</text></svg>`;
-  if (daily) svg += '</svg>';
+  svg += '</svg>';
   $(target).innerHTML = svg;
 }
 function renderTable() {
@@ -323,7 +323,7 @@ function setView(view) {
     $(tab).setAttribute('aria-selected',String(selected)); $(tab).tabIndex = selected ? 0 : -1;
     $(panel).classList.toggle('hidden',!selected);
   }
-  if (view === 'stock') renderStockValue(); else { renderTrend(); renderWaterfall(); }
+  if (view === 'stock') renderStockValue(); else { renderTrend(); renderBreakdown(); }
 }
 function renderStockValue() {
   const hs = holdings(), quotes = quoteData.symbols || {};
@@ -350,7 +350,7 @@ for (const tab of [$('overviewTab'),$('stockValueTab')]) tab.onkeydown = e => {
 $('stockValueSelect').onchange = e => { stockSymbol = e.target.value; renderStockValue(); };
 document.querySelectorAll('[data-stock-period]').forEach(b => b.onclick = () => { stockPeriod = b.dataset.stockPeriod; document.querySelectorAll('[data-stock-period]').forEach(x=>x.classList.toggle('selected',x===b)); renderStockValue(); });
 let resizeTimer;
-window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { renderTrend(); renderWaterfall(); renderStockValue(); }, 120); });
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { renderTrend(); renderBreakdown(); renderStockValue(); }, 120); });
 render(); loadQuotes();
 // Read the shared cache while the app is visible; do not trigger Yahoo requests
 // or GitHub workflows from each visitor's phone.

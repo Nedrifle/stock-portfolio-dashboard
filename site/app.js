@@ -152,7 +152,7 @@ function drawTrend(analysis, prefix = '', label = '時価評価額の推移') {
 }
 function renderBreakdown() {
   renderDailyChange();
-  drawBars('waterfallChart', result.rows, '含み損益内訳', '含み損益（円）');
+  drawBars('waterfallChart', result.rows, '銘柄別含み損益', '含み損益（円）', true);
   $('breakdownDate').textContent = result.latest ? `${valuationLabel(result.latest)} · 取得価額との差額` : '銘柄ごとの含み損益をバーチャートで表示';
 }
 function renderDailyChange() {
@@ -163,16 +163,16 @@ function renderDailyChange() {
   $('dailyChangeDate').textContent = change ? `${valuationLabel(result.latest)} · 前営業日終値比` : '比較できる前営業日の終値がそろうと表示します';
   drawBars('dailyChangeChart', change?.rows.map(r => ({...r, gain:r.change})) || [], '前日比増減の内訳');
 }
-function drawBars(target, rows, title, axisTitle = '増減額（円）') {
+function drawBars(target, rows, title, axisTitle = '増減額（円）', compact = false) {
   if (!rows.length) { $(target).innerHTML = '<div class="empty-chart" style="height:220px">比較に必要な株価がそろうと内訳を表示します</div>'; return; }
   const absoluteTotal = rows.reduce((sum, r) => sum + Math.abs(r.gain), 0);
   const bars = [...rows].sort((a,b) => Math.abs(b.gain)-Math.abs(a.gain) || a.symbol.localeCompare(b.symbol)).map(r => ({...r, start:0, end:r.gain, share:absoluteTotal ? Math.abs(r.gain)/absoluteTotal*100 : 0}));
-  const W = Math.max(320, $(target).clientWidth), left = W < 500 ? 96 : 165, right = W < 500 ? 88 : 125;
-  const top = 42, step = 46, H = top + bars.length * step + 12, bh = 20;
+  const W = Math.max(320, $(target).clientWidth), left = compact ? 8 : W < 500 ? 96 : 165, right = compact ? 8 : W < 500 ? 88 : 125;
+  const top = 42, step = compact ? 32 : 46, H = top + bars.length * step + 12, bh = compact ? 8 : 20;
   const extent = Math.max(...bars.map(b => Math.abs(b.gain))), lo = -extent, hi = extent, pad = (hi - lo) * .08 || 1000;
   const x = v => left + (v - lo + pad) / (hi - lo + 2 * pad) * (W - left - right);
   const axisLabel = n => Math.abs(n) >= 10000 ? `${number(Math.round(n / 1000) / 10)}万` : number(Math.round(n));
-  let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px" role="img" aria-label="${title}。金額の絶対値が大きい順"><text x="${left}" y="12" class="svg-small">${axisTitle}</text><text x="${W - 6}" y="12" class="svg-small" text-anchor="end">金額 / 構成比</text>`;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px" role="img" aria-label="${title}。金額の絶対値が大きい順"><text x="${left}" y="12" class="svg-small">${compact ? '銘柄 | 銘柄コード' : axisTitle}</text><text x="${W - 6}" y="12" class="svg-small" text-anchor="end">${compact ? '含み損益 | 構成比' : '金額 / 構成比'}</text>`;
   const ticks = W < 500 ? 3 : 5;
   for (let i = 0; i < ticks; i++) {
     const v = lo + i / (ticks - 1) * (hi - lo);
@@ -181,6 +181,11 @@ function drawBars(target, rows, title, axisTitle = '増減額（円）') {
   svg += `<line x1="${x(0)}" x2="${x(0)}" y1="${top - 8}" y2="${H - 12}" stroke="#b3c7ba"/>`;
   bars.forEach((b, i) => {
     const yy = top + step * i, xx = x(Math.min(b.start, b.end)), width = Math.max(1, Math.abs(x(b.end) - x(b.start)));
+    if (compact) {
+      const label = b.name.length > (W < 500 ? 6 : 22) ? `${b.name.slice(0, W < 500 ? 6 : 22)}…` : b.name;
+      svg += `<g><title>${escape(b.name)} | ${escape(b.symbol)}：${signed(b.gain)} | ${b.share.toFixed(1)}%</title><text x="4" y="${yy + 10}" class="svg-small">${escape(label)} | ${escape(b.symbol.replace('.T', ''))}</text><text x="${W - 6}" y="${yy + 10}" class="svg-small" text-anchor="end">${signed(b.gain)} | ${b.share.toFixed(1)}%</text><rect x="${xx}" y="${yy + 16}" width="${width}" height="${bh}" rx="2" fill="${b.gain >= 0 ? '#518b6e' : '#ca8070'}"/></g>`;
+      return;
+    }
     svg += `<g><title>${escape(b.name)}：${signed(b.gain)}（構成比 ${b.share.toFixed(1)}%）</title><text x="4" y="${yy + 9}" class="svg-small">${escape(b.name.slice(0, W < 500 ? 8 : 15))}</text><text x="4" y="${yy + 23}" class="svg-small">${escape(b.symbol.replace('.T', ''))}</text><rect x="${xx}" y="${yy}" width="${width}" height="${bh}" rx="2" fill="${b.gain >= 0 ? '#518b6e' : '#ca8070'}"/><text x="${W - 6}" y="${yy + 10}" class="svg-small" text-anchor="end">${signed(b.gain)}</text>${`<text x="${W - 6}" y="${yy + 25}" class="svg-small" text-anchor="end">${b.share.toFixed(1)}%</text>`}</g>`;
   });
   svg += '</svg>';
